@@ -37,6 +37,22 @@ def build_parser() -> argparse.ArgumentParser:
     batch_parser.add_argument("--non-recursive", action="store_true")
     batch_parser.add_argument("--stop-on-error", action="store_true")
 
+    task_validate_parser = subparsers.add_parser(
+        "task-validate",
+        help="Validate one task JSON file against task contract.",
+    )
+    task_validate_parser.add_argument("--task-file", type=Path, required=True)
+
+    task_validate_dir_parser = subparsers.add_parser(
+        "task-validate-dir",
+        help="Validate multiple task JSON files in a directory.",
+    )
+    task_validate_dir_parser.add_argument("--tasks-dir", type=Path, required=True)
+    task_validate_dir_parser.add_argument("--pattern", type=str, default="*.json")
+    task_validate_dir_parser.add_argument("--max-tasks", type=int, default=0)
+    task_validate_dir_parser.add_argument("--non-recursive", action="store_true")
+    task_validate_dir_parser.add_argument("--stop-on-error", action="store_true")
+
     dry_parser = subparsers.add_parser(
         "dry-run",
         help="Run dry simulation and still produce an evidence bundle.",
@@ -248,6 +264,16 @@ def main(argv: list[str] | None = None) -> int:
                 max_tasks=args.max_tasks,
                 recursive=not bool(args.non_recursive),
                 continue_on_error=not bool(args.stop_on_error),
+            )
+        elif args.command == "task-validate":
+            payload = engine.task_validate(args.task_file.resolve())
+        elif args.command == "task-validate-dir":
+            payload = engine.task_validate_dir(
+                args.tasks_dir.resolve(),
+                pattern=args.pattern,
+                recursive=not bool(args.non_recursive),
+                max_tasks=args.max_tasks,
+                stop_on_error=bool(args.stop_on_error),
             )
         elif args.command == "dry-run":
             payload = engine.run_from_file(args.task_file.resolve(), dry_run=True)

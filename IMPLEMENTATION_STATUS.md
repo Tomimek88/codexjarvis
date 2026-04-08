@@ -40,6 +40,7 @@
   - Cache tooling: `cache-verify` and `cache-rebuild`
   - Doctor command: consolidated diagnostic snapshot (`health` + cache + queue + run audit summary)
   - Batch run command: execute multiple task JSON files with continue/stop-on-error modes
+  - Task validation commands: `task-validate` and `task-validate-dir`
   - Run export command: ZIP bundle generation for run portability (`export-run`)
   - Run import command: restore exported ZIP runs with optional memory/cache linking (`import-run`)
   - Queue runner v1: submit/list/get/work with retry-at-queue-level

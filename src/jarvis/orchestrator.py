@@ -446,6 +446,90 @@ class JarvisEngine:
         task = load_json_file(task_file)
         return self.run(task, dry_run=dry_run)
 
+    def task_validate(self, task_file: Path) -> dict[str, Any]:
+        path = task_file.resolve()
+        task = load_json_file(path)
+        validate_task_request(task)
+        return {
+            "status": "ok",
+            "task_file": _as_project_relative(path, self.project_root),
+            "valid": True,
+            "task_id": str(task.get("task_id", "")),
+            "domain": str(task.get("domain", "")),
+        }
+
+    def task_validate_dir(
+        self,
+        tasks_dir: Path,
+        *,
+        pattern: str = "*.json",
+        recursive: bool = True,
+        max_tasks: int = 0,
+        stop_on_error: bool = False,
+    ) -> dict[str, Any]:
+        directory = tasks_dir.resolve()
+        if not directory.exists() or not directory.is_dir():
+            raise ValidationError(f"tasks_dir '{directory}' does not exist or is not a directory.")
+
+        safe_pattern = pattern.strip() if isinstance(pattern, str) and pattern.strip() else "*.json"
+        discovered = list(directory.rglob(safe_pattern)) if recursive else list(directory.glob(safe_pattern))
+        files = sorted([path for path in discovered if path.is_file()], key=lambda p: str(p).lower())
+        discovered_count = len(files)
+        if max_tasks > 0:
+            files = files[: max(1, min(int(max_tasks), 10000))]
+
+        results: list[dict[str, Any]] = []
+        valid_count = 0
+        invalid_count = 0
+        stopped_early = False
+
+        for path in files:
+            rel_path = _as_project_relative(path, self.project_root)
+            try:
+                task = load_json_file(path)
+                validate_task_request(task)
+                valid_count += 1
+                results.append(
+                    {
+                        "task_file": rel_path,
+                        "valid": True,
+                        "task_id": str(task.get("task_id", "")),
+                        "domain": str(task.get("domain", "")),
+                        "error": "",
+                    }
+                )
+            except Exception as exc:
+                invalid_count += 1
+                results.append(
+                    {
+                        "task_file": rel_path,
+                        "valid": False,
+                        "task_id": "",
+                        "domain": "",
+                        "error": f"{type(exc).__name__}: {exc}",
+                    }
+                )
+                if stop_on_error:
+                    stopped_early = True
+                    break
+
+        processed_count = len(results)
+        selected_count = len(files)
+        remaining_count = max(0, selected_count - processed_count)
+        return {
+            "status": "ok",
+            "discovered_count": discovered_count,
+            "selected_count": selected_count,
+            "processed_count": processed_count,
+            "valid_count": valid_count,
+            "invalid_count": invalid_count,
+            "stopped_early": stopped_early,
+            "remaining_count": remaining_count,
+            "pattern": safe_pattern,
+            "recursive": bool(recursive),
+            "results": results,
+        }
+
     def batch_run(
         self,
         tasks_dir: Path,
