@@ -1,0 +1,17 @@
+services:
+  jarvis:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: codexjarvis
+    command: ["python", "-m", "jarvis", "health", "--root", "/app"]
+    volumes:
+      - ./data:/app/data
+      - ./artifacts:/app/artifacts
+      - ./contracts:/app/contracts:ro
+      - ./examples:/app/examples:ro
+    deploy:
+      resources:
+        limits:
+          cpus: "4.0"
+          memory: 8G

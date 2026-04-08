@@ -1,0 +1,25 @@
+{
+  "task_id": "task-0001",
+  "objective": "Compute a deterministic generic score for smoke test.",
+  "domain": "generic",
+  "requires_computation": true,
+  "allow_internet_research": true,
+  "strict_no_guessing": true,
+  "force_rerun": false,
+  "input_refs": [
+    {
+      "name": "smoke-input",
+      "uri": "local://examples/smoke"
+    }
+  ],
+  "parameters": {
+    "a": 2,
+    "b": 4,
+    "c": 8,
+    "seed": 42
+  },
+  "acceptance_criteria": [
+    "Evidence bundle must exist.",
+    "Run must be deterministic for same inputs."
+  ]
+}

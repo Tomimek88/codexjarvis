@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jarvis.local/schemas/task_request.schema.json",
+  "title": "TaskRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "task_id",
+    "objective",
+    "domain",
+    "requires_computation",
+    "allow_internet_research",
+    "strict_no_guessing"
+  ],
+  "properties": {
+    "task_id": {
+      "type": "string",
+      "minLength": 8
+    },
+    "objective": {
+      "type": "string",
+      "minLength": 3
+    },
+    "domain": {
+      "type": "string",
+      "enum": [
+        "materials",
+        "chemistry",
+        "physics",
+        "markets",
+        "generic"
+      ]
+    },
+    "requires_computation": {
+      "type": "boolean"
+    },
+    "allow_internet_research": {
+      "type": "boolean",
+      "const": true
+    },
+    "strict_no_guessing": {
+      "type": "boolean",
+      "const": true
+    },
+    "force_rerun": {
+      "type": "boolean",
+      "default": false
+    },
+    "input_refs": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "uri"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "uri": {
+            "type": "string"
+          },
+          "hash": {
+            "type": "string",
+            "pattern": "^[a-fA-F0-9]{64}$"
+          }
+        }
+      }
+    },
+    "parameters": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "acceptance_criteria": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}
+

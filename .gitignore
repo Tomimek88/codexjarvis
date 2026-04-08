@@ -1,0 +1,18 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
+build/
+*.egg-info/
+
+# Runtime data
+data/cache/cache_index.json
+data/runs/*
+!data/runs/.gitkeep
+artifacts/*
+!artifacts/.gitkeep
