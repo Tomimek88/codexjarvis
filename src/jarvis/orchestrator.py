@@ -447,6 +447,27 @@ class JarvisEngine:
         task = load_json_file(task_file)
         return self.run(task, dry_run=dry_run)
 
+    def run_quick(
+        self,
+        *,
+        objective: str,
+        domain: str = "generic",
+        parameters: dict[str, Any] | None = None,
+        task_id: str | None = None,
+        force_rerun: bool = False,
+        acceptance_criteria: list[str] | None = None,
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        task = self._build_quick_task(
+            objective=objective,
+            domain=domain,
+            parameters=parameters,
+            task_id=task_id,
+            force_rerun=force_rerun,
+            acceptance_criteria=acceptance_criteria,
+        )
+        return self.run(task, dry_run=dry_run)
+
     def task_validate(self, task_file: Path) -> dict[str, Any]:
         path = task_file.resolve()
         task = load_json_file(path)
@@ -2116,6 +2137,28 @@ class JarvisEngine:
         validate_task_request(task)
         return self.queue_submit(task, dry_run=dry_run, max_attempts=max_attempts)
 
+    def queue_submit_quick(
+        self,
+        *,
+        objective: str,
+        domain: str = "generic",
+        parameters: dict[str, Any] | None = None,
+        task_id: str | None = None,
+        force_rerun: bool = False,
+        acceptance_criteria: list[str] | None = None,
+        dry_run: bool = False,
+        max_attempts: int = 1,
+    ) -> dict[str, Any]:
+        task = self._build_quick_task(
+            objective=objective,
+            domain=domain,
+            parameters=parameters,
+            task_id=task_id,
+            force_rerun=force_rerun,
+            acceptance_criteria=acceptance_criteria,
+        )
+        return self.queue_submit(task, dry_run=dry_run, max_attempts=max_attempts)
+
     def queue_submit(
         self,
         task: dict[str, Any],
@@ -2401,6 +2444,40 @@ class JarvisEngine:
         if include_cycle_results:
             payload["cycle_results"] = cycle_results
         return payload
+
+    @staticmethod
+    def _build_quick_task(
+        *,
+        objective: str,
+        domain: str,
+        parameters: dict[str, Any] | None,
+        task_id: str | None,
+        force_rerun: bool,
+        acceptance_criteria: list[str] | None,
+    ) -> dict[str, Any]:
+        if parameters is None:
+            params: dict[str, Any] = {}
+        elif isinstance(parameters, dict):
+            params = dict(parameters)
+        else:
+            raise ValidationError("Quick task parameters must be a JSON object.")
+
+        criteria = [str(item).strip() for item in (acceptance_criteria or []) if str(item).strip()]
+        quick_task_id = (
+            task_id
+            or f"task_quick_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}_{uuid4().hex[:8]}"
+        ).strip()
+        return {
+            "task_id": quick_task_id,
+            "objective": str(objective).strip(),
+            "domain": str(domain).strip(),
+            "requires_computation": True,
+            "allow_internet_research": True,
+            "strict_no_guessing": True,
+            "force_rerun": bool(force_rerun),
+            "parameters": params,
+            "acceptance_criteria": criteria,
+        }
 
     def _validate_task_claims(
         self,

@@ -75,6 +75,19 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser = subparsers.add_parser("run", help="Run task from task JSON file.")
     run_parser.add_argument("--task-file", type=Path, required=True)
 
+    run_quick_parser = subparsers.add_parser(
+        "run-quick",
+        help="Run one quick task without creating a task JSON file.",
+    )
+    run_quick_parser.add_argument("--objective", type=str, required=True)
+    run_quick_parser.add_argument("--domain", type=str, default="generic")
+    run_quick_parser.add_argument("--task-id", type=str, required=False)
+    run_quick_parser.add_argument("--params-json", type=str, default="{}")
+    run_quick_parser.add_argument("--param", action="append", dest="param_pairs", default=[])
+    run_quick_parser.add_argument("--acceptance", action="append", dest="acceptance", default=[])
+    run_quick_parser.add_argument("--force-rerun", action="store_true")
+    run_quick_parser.add_argument("--dry-run", action="store_true")
+
     batch_parser = subparsers.add_parser(
         "batch-run",
         help="Run multiple task JSON files from a directory.",
@@ -294,6 +307,20 @@ def build_parser() -> argparse.ArgumentParser:
     queue_submit_parser.add_argument("--dry-run", action="store_true")
     queue_submit_parser.add_argument("--max-attempts", type=int, default=1)
 
+    queue_submit_quick_parser = subparsers.add_parser(
+        "queue-submit-quick",
+        help="Submit one quick task into queue without creating a task JSON file.",
+    )
+    queue_submit_quick_parser.add_argument("--objective", type=str, required=True)
+    queue_submit_quick_parser.add_argument("--domain", type=str, default="generic")
+    queue_submit_quick_parser.add_argument("--task-id", type=str, required=False)
+    queue_submit_quick_parser.add_argument("--params-json", type=str, default="{}")
+    queue_submit_quick_parser.add_argument("--param", action="append", dest="param_pairs", default=[])
+    queue_submit_quick_parser.add_argument("--acceptance", action="append", dest="acceptance", default=[])
+    queue_submit_quick_parser.add_argument("--force-rerun", action="store_true")
+    queue_submit_quick_parser.add_argument("--dry-run", action="store_true")
+    queue_submit_quick_parser.add_argument("--max-attempts", type=int, default=1)
+
     queue_list_parser = subparsers.add_parser(
         "queue-list",
         help="List queue jobs.",
@@ -417,6 +444,18 @@ def main(argv: list[str] | None = None) -> int:
             )
         elif args.command == "run":
             payload = engine.run_from_file(args.task_file.resolve(), dry_run=False)
+        elif args.command == "run-quick":
+            params = _parse_json_object_arg(args.params_json, "--params-json")
+            params.update(_parse_param_pairs(list(args.param_pairs or []), "--param"))
+            payload = engine.run_quick(
+                objective=args.objective,
+                domain=args.domain,
+                parameters=params,
+                task_id=args.task_id,
+                force_rerun=bool(args.force_rerun),
+                acceptance_criteria=list(args.acceptance or []),
+                dry_run=bool(args.dry_run),
+            )
         elif args.command == "batch-run":
             payload = engine.batch_run(
                 args.tasks_dir.resolve(),
@@ -542,6 +581,19 @@ def main(argv: list[str] | None = None) -> int:
                 dry_run=bool(args.dry_run),
                 max_attempts=args.max_attempts,
             )
+        elif args.command == "queue-submit-quick":
+            params = _parse_json_object_arg(args.params_json, "--params-json")
+            params.update(_parse_param_pairs(list(args.param_pairs or []), "--param"))
+            payload = engine.queue_submit_quick(
+                objective=args.objective,
+                domain=args.domain,
+                parameters=params,
+                task_id=args.task_id,
+                force_rerun=bool(args.force_rerun),
+                acceptance_criteria=list(args.acceptance or []),
+                dry_run=bool(args.dry_run),
+                max_attempts=args.max_attempts,
+            )
         elif args.command == "queue-list":
             payload = engine.queue_list(limit=args.limit, status=args.status)
         elif args.command == "queue-get":
@@ -609,6 +661,83 @@ def main(argv: list[str] | None = None) -> int:
 def _print_json(payload: dict[str, Any]) -> None:
     json.dump(payload, sys.stdout, indent=2, ensure_ascii=True)
     sys.stdout.write("\n")
+
+
+def _parse_json_object_arg(value: str, label: str) -> dict[str, Any]:
+    text = str(value).strip() if value is not None else "{}"
+    if text == "":
+        text = "{}"
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError as exc:
+        try:
+            return _parse_relaxed_object_text(text, label=label)
+        except ValidationError:
+            raise ValidationError(f"{label} must be valid JSON object text: {exc}") from exc
+    if not isinstance(parsed, dict):
+        raise ValidationError(f"{label} must decode to a JSON object.")
+    return parsed
+
+
+def _parse_relaxed_object_text(text: str, *, label: str) -> dict[str, Any]:
+    raw = text.strip()
+    if raw.startswith("{") and raw.endswith("}"):
+        raw = raw[1:-1].strip()
+    if raw == "":
+        return {}
+
+    out: dict[str, Any] = {}
+    parts = [chunk.strip() for chunk in raw.split(",") if chunk.strip()]
+    for part in parts:
+        if ":" in part:
+            key_raw, value_raw = part.split(":", 1)
+        elif "=" in part:
+            key_raw, value_raw = part.split("=", 1)
+        else:
+            raise ValidationError(f"{label} relaxed object segment must include ':' or '=': {part}")
+        key = key_raw.strip().strip("\"'")
+        if key == "":
+            raise ValidationError(f"{label} contains an empty key.")
+        out[key] = _parse_scalar_value(value_raw.strip())
+    return out
+
+
+def _parse_param_pairs(values: list[str], label: str) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    for raw in values:
+        text = str(raw).strip()
+        if text == "":
+            continue
+        if "=" not in text:
+            raise ValidationError(f"{label} entries must use key=value format: {text}")
+        key_raw, value_raw = text.split("=", 1)
+        key = key_raw.strip()
+        if key == "":
+            raise ValidationError(f"{label} key cannot be empty.")
+        out[key] = _parse_scalar_value(value_raw.strip())
+    return out
+
+
+def _parse_scalar_value(text: str) -> Any:
+    value = text.strip()
+    lowered = value.lower()
+    if lowered in {"true", "false"}:
+        return lowered == "true"
+    if lowered in {"null", "none"}:
+        return None
+    if value.startswith("\"") and value.endswith("\"") and len(value) >= 2:
+        return value[1:-1]
+    if value.startswith("'") and value.endswith("'") and len(value) >= 2:
+        return value[1:-1]
+    try:
+        return int(value)
+    except ValueError:
+        pass
+    try:
+        return float(value)
+    except ValueError:
+        pass
+    return value
 
 
 if __name__ == "__main__":

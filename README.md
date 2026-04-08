@@ -144,6 +144,7 @@ jarvis --root <project_root> health
 jarvis --root <project_root> doctor [--fix] [--queue-prune] [--queue-prune-limit 200] [--queue-prune-older-than-sec 86400] [--queue-prune-delete-results] [--queue-clean-results] [--queue-clean-results-limit 0] [--memory-clean] [--memory-clean-limit 0]
 jarvis --root <project_root> dry-run --task-file <task.json>
 jarvis --root <project_root> run --task-file <task.json>
+jarvis --root <project_root> run-quick --objective "<text>" [--domain generic] [--params-json "{}"] [--param key=value] [--task-id <id>] [--force-rerun] [--acceptance "<criterion>"] [--dry-run]
 jarvis --root <project_root> batch-run --tasks-dir <dir> [--pattern *.json] [--max-tasks 0] [--dry-run] [--non-recursive] [--stop-on-error]
 jarvis --root <project_root> task-validate --task-file <task.json>
 jarvis --root <project_root> task-validate-dir --tasks-dir <dir> [--pattern *.json] [--max-tasks 0] [--non-recursive] [--stop-on-error]
@@ -172,6 +173,7 @@ jarvis --root <project_root> memory-clean [--limit 0] [--dry-run]
 jarvis --root <project_root> memory-index --run-id <run_id>
 jarvis --root <project_root> memory-reindex-all [--limit 0] [--include-failed]
 jarvis --root <project_root> queue-submit --task-file <task.json> [--dry-run] [--max-attempts 1]
+jarvis --root <project_root> queue-submit-quick --objective "<text>" [--domain generic] [--params-json "{}"] [--param key=value] [--task-id <id>] [--force-rerun] [--acceptance "<criterion>"] [--dry-run] [--max-attempts 1]
 jarvis --root <project_root> queue-list [--status QUEUED] [--limit 20]
 jarvis --root <project_root> queue-get --job-id <job_id>
 jarvis --root <project_root> queue-stats
@@ -188,6 +190,8 @@ jarvis --root <project_root> queue-work-daemon [--max-cycles 0] [--poll-interval
 
 Tip: `queue-work --max-jobs 0` processes jobs until queue becomes idle (bounded by internal safety cap).
 Tip: `queue-work-daemon` keeps polling queue between cycles and is suitable for long-running local worker mode.
+Tip: `run-quick` / `queue-submit-quick` are the fastest way to run without creating task JSON files.
+Tip: for PowerShell convenience, prefer repeated `--param key=value` over JSON quoting.
 Tip: use `queue-prune --dry-run` to preview cleanup without deleting jobs/files.
 Tip: run `queue-clean-results --dry-run` to preview orphan result-file cleanup.
 Tip: run `memory-clean --dry-run` to preview stale memory-index cleanup.
@@ -314,10 +318,18 @@ Tip: run `memory-clean --dry-run` to preview stale memory-index cleanup.
 - `queue-requeue-failed` moves failed jobs back into `QUEUED` for manual replay.
 - `queue-cancel` marks a queued/running job as `CANCELLED`.
 - `queue-work-daemon` runs repeated worker cycles with configurable polling and idle-stop behavior.
+- `queue-submit-quick` lets you enqueue work directly from objective text (no task file).
 - Submit now, execute later pattern:
-  1. `queue-submit`
+  1. `queue-submit` or `queue-submit-quick`
   2. `queue-work-once`, `queue-work`, or `queue-work-daemon`
   3. `queue-get` / `queue-list`
+
+## Quick Commands (Current)
+
+- `run-quick` runs one task from CLI arguments with automatic contract-safe defaults.
+- `queue-submit-quick` enqueues one task from CLI arguments with the same defaults.
+- both support `--param key=value` and tolerate relaxed object text for `--params-json` (for easier shell usage).
+- Useful for rapid iteration before switching to structured task JSON files.
 
 ## Evidence-First Guarantee in This Scaffold
 
