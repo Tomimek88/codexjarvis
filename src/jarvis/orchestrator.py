@@ -444,6 +444,90 @@ class JarvisEngine:
         task = load_json_file(task_file)
         return self.run(task, dry_run=dry_run)
 
+    def batch_run(
+        self,
+        tasks_dir: Path,
+        *,
+        pattern: str = "*.json",
+        dry_run: bool = False,
+        max_tasks: int = 0,
+        recursive: bool = True,
+        continue_on_error: bool = True,
+    ) -> dict[str, Any]:
+        directory = tasks_dir.resolve()
+        if not directory.exists() or not directory.is_dir():
+            raise ValidationError(f"tasks_dir '{directory}' does not exist or is not a directory.")
+
+        safe_pattern = pattern.strip() if isinstance(pattern, str) and pattern.strip() else "*.json"
+        discovered = list(directory.rglob(safe_pattern)) if recursive else list(directory.glob(safe_pattern))
+        files = sorted([path for path in discovered if path.is_file()], key=lambda p: str(p).lower())
+        discovered_count = len(files)
+
+        if max_tasks > 0:
+            files = files[: max(1, min(int(max_tasks), 10000))]
+        selected_count = len(files)
+
+        results: list[dict[str, Any]] = []
+        succeeded = 0
+        failed = 0
+        processed = 0
+        stopped_early = False
+
+        for task_path in files:
+            t0 = datetime.now(timezone.utc)
+            rel_path = _as_project_relative(task_path, self.project_root)
+
+            try:
+                payload = self.run_from_file(task_path, dry_run=dry_run)
+                run_status = str(payload.get("status", ""))
+                ok = run_status not in {"failed", "error"}
+                if ok:
+                    succeeded += 1
+                else:
+                    failed += 1
+                result_item = {
+                    "task_file": str(rel_path),
+                    "ok": ok,
+                    "status": run_status,
+                    "run_id": str(payload.get("run_id", "")),
+                    "cache_key": str(payload.get("cache_key", "")),
+                    "duration_sec": round((datetime.now(timezone.utc) - t0).total_seconds(), 6),
+                }
+            except Exception as exc:
+                failed += 1
+                result_item = {
+                    "task_file": str(rel_path),
+                    "ok": False,
+                    "status": "error",
+                    "run_id": "",
+                    "cache_key": "",
+                    "duration_sec": round((datetime.now(timezone.utc) - t0).total_seconds(), 6),
+                    "error": f"{type(exc).__name__}: {exc}",
+                }
+
+            processed += 1
+            results.append(result_item)
+
+            if (not result_item["ok"]) and (not continue_on_error):
+                stopped_early = True
+                break
+
+        remaining_count = max(0, selected_count - processed)
+        return {
+            "status": "ok",
+            "discovered_count": discovered_count,
+            "selected_count": selected_count,
+            "processed_count": processed,
+            "succeeded_count": succeeded,
+            "failed_count": failed,
+            "stopped_early": stopped_early,
+            "remaining_count": remaining_count,
+            "dry_run": bool(dry_run),
+            "pattern": safe_pattern,
+            "recursive": bool(recursive),
+            "results": results,
+        }
+
     def replay(self, run_id: str) -> dict[str, Any]:
         run_dir = self.store.run_path(run_id)
         if not run_dir.exists():
@@ -1791,3 +1875,11 @@ def _is_within_root(path: Path, root: Path) -> bool:
         return True
     except ValueError:
         return False
+
+
+def _as_project_relative(path: Path, project_root: Path) -> str:
+    abs_path = path.resolve()
+    try:
+        return str(abs_path.relative_to(project_root.resolve()).as_posix())
+    except ValueError:
+        return str(abs_path)

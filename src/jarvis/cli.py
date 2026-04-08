@@ -26,6 +26,17 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser = subparsers.add_parser("run", help="Run task from task JSON file.")
     run_parser.add_argument("--task-file", type=Path, required=True)
 
+    batch_parser = subparsers.add_parser(
+        "batch-run",
+        help="Run multiple task JSON files from a directory.",
+    )
+    batch_parser.add_argument("--tasks-dir", type=Path, required=True)
+    batch_parser.add_argument("--pattern", type=str, default="*.json")
+    batch_parser.add_argument("--max-tasks", type=int, default=0)
+    batch_parser.add_argument("--dry-run", action="store_true")
+    batch_parser.add_argument("--non-recursive", action="store_true")
+    batch_parser.add_argument("--stop-on-error", action="store_true")
+
     dry_parser = subparsers.add_parser(
         "dry-run",
         help="Run dry simulation and still produce an evidence bundle.",
@@ -214,6 +225,15 @@ def main(argv: list[str] | None = None) -> int:
             payload = engine.doctor()
         elif args.command == "run":
             payload = engine.run_from_file(args.task_file.resolve(), dry_run=False)
+        elif args.command == "batch-run":
+            payload = engine.batch_run(
+                args.tasks_dir.resolve(),
+                pattern=args.pattern,
+                dry_run=bool(args.dry_run),
+                max_tasks=args.max_tasks,
+                recursive=not bool(args.non_recursive),
+                continue_on_error=not bool(args.stop_on_error),
+            )
         elif args.command == "dry-run":
             payload = engine.run_from_file(args.task_file.resolve(), dry_run=True)
         elif args.command == "replay":

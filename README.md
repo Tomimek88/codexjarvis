@@ -144,6 +144,7 @@ jarvis --root <project_root> health
 jarvis --root <project_root> doctor
 jarvis --root <project_root> dry-run --task-file <task.json>
 jarvis --root <project_root> run --task-file <task.json>
+jarvis --root <project_root> batch-run --tasks-dir <dir> [--pattern *.json] [--max-tasks 0] [--dry-run] [--non-recursive] [--stop-on-error]
 jarvis --root <project_root> replay --run-id <run_id>
 jarvis --root <project_root> trace --run-id <run_id>
 jarvis --root <project_root> inspect --run-id <run_id>
@@ -253,6 +254,11 @@ jarvis --root <project_root> queue-work [--max-jobs 10] [--worker-id worker-1]
   - queue status summary
   - run stats
   - run integrity audit summary
+
+## Batch Runner (Current)
+
+- `batch-run` executes multiple task JSON files from a directory.
+- Supports pattern filtering, recursion control, task limit, dry-run mode, and stop-on-error behavior.
 
 ## Queue Runner (Current)
 
