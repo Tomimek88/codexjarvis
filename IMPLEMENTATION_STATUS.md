@@ -52,6 +52,7 @@
   - Queue recovery command: `queue-requeue-failed`
   - Queue stale-running inspect command: `queue-stale-running`
   - Queue stale-running recovery command: `queue-recover-running`
+  - Queue prune command: `queue-prune`
   - Queue cancellation command: `queue-cancel`
   - Queue worker unlimited drain mode: `queue-work --max-jobs 0`
 

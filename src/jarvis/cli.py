@@ -278,6 +278,15 @@ def build_parser() -> argparse.ArgumentParser:
     queue_stale_parser.add_argument("--limit", type=int, default=20)
     queue_stale_parser.add_argument("--max-age-sec", type=int, default=300)
 
+    queue_prune_parser = subparsers.add_parser(
+        "queue-prune",
+        help="Prune old finished queue jobs (SUCCESS/FAILED/CANCELLED).",
+    )
+    queue_prune_parser.add_argument("--limit", type=int, default=100)
+    queue_prune_parser.add_argument("--status", action="append", dest="statuses")
+    queue_prune_parser.add_argument("--older-than-sec", type=int, default=0)
+    queue_prune_parser.add_argument("--keep-result-files", action="store_true")
+
     queue_cancel_parser = subparsers.add_parser(
         "queue-cancel",
         help="Cancel one queue job by id.",
@@ -460,6 +469,13 @@ def main(argv: list[str] | None = None) -> int:
             payload = engine.queue_stale_running(
                 limit=args.limit,
                 max_age_sec=args.max_age_sec,
+            )
+        elif args.command == "queue-prune":
+            payload = engine.queue_prune(
+                limit=args.limit,
+                statuses=args.statuses,
+                older_than_sec=args.older_than_sec,
+                delete_results=not bool(args.keep_result_files),
             )
         elif args.command == "queue-cancel":
             payload = engine.queue_cancel(args.job_id, reason=args.reason)

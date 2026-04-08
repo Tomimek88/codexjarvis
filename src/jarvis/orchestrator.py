@@ -2078,6 +2078,32 @@ class JarvisEngine:
             "jobs": out.get("jobs", []),
         }
 
+    def queue_prune(
+        self,
+        *,
+        limit: int = 100,
+        statuses: list[str] | None = None,
+        older_than_sec: int = 0,
+        delete_results: bool = True,
+    ) -> dict[str, Any]:
+        out = self.queue.prune_jobs(
+            limit=limit,
+            statuses=statuses,
+            older_than_sec=older_than_sec,
+            delete_results=delete_results,
+        )
+        return {
+            "status": "ok",
+            "requested_limit": out.get("requested_limit", 0),
+            "statuses": out.get("statuses", []),
+            "older_than_sec": out.get("older_than_sec", 0),
+            "matched_count": out.get("matched_count", 0),
+            "pruned_count": out.get("pruned_count", 0),
+            "result_files_deleted": out.get("result_files_deleted", 0),
+            "result_files_missing": out.get("result_files_missing", 0),
+            "jobs": out.get("jobs", []),
+        }
+
     def queue_cancel(self, job_id: str, *, reason: str = "") -> dict[str, Any]:
         job = self.queue.cancel_job(job_id, reason=reason)
         return {"status": "ok", "job": job}

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -556,6 +556,111 @@ class QueueStore:
             "jobs": stale_jobs,
         }
 
+    def prune_jobs(
+        self,
+        *,
+        limit: int = 100,
+        statuses: list[str] | None = None,
+        older_than_sec: int = 0,
+        delete_results: bool = True,
+    ) -> dict[str, Any]:
+        self.ensure_schema()
+        safe_limit = max(1, min(int(limit), 10000)) if int(limit) > 0 else 0
+        safe_older_than_sec = max(0, min(int(older_than_sec), 31_536_000))
+        allowed = {"SUCCESS", "FAILED", "CANCELLED"}
+        normalized_statuses = [
+            str(status).strip().upper()
+            for status in (statuses or ["SUCCESS", "FAILED", "CANCELLED"])
+            if str(status).strip()
+        ]
+        normalized_statuses = [status for status in normalized_statuses if status in allowed]
+        if len(normalized_statuses) == 0:
+            return {
+                "requested_limit": safe_limit,
+                "statuses": [],
+                "older_than_sec": safe_older_than_sec,
+                "matched_count": 0,
+                "pruned_count": 0,
+                "result_files_deleted": 0,
+                "result_files_missing": 0,
+                "jobs": [],
+            }
+
+        placeholders = ", ".join("?" for _ in normalized_statuses)
+        params: list[Any] = list(normalized_statuses)
+        query = f"""
+            SELECT *
+            FROM jobs
+            WHERE status IN ({placeholders})
+        """
+        if safe_older_than_sec > 0:
+            cutoff = (datetime.now(timezone.utc) - timedelta(seconds=safe_older_than_sec)).isoformat()
+            query += " AND finished_at_utc IS NOT NULL AND finished_at_utc <= ?"
+            params.append(cutoff)
+        query += " ORDER BY finished_at_utc ASC, created_at_utc ASC, job_id ASC"
+        if safe_limit > 0:
+            query += " LIMIT ?"
+            params.append(safe_limit)
+
+        con = self._connect()
+        try:
+            rows = con.execute(query, tuple(params)).fetchall()
+            if len(rows) == 0:
+                return {
+                    "requested_limit": safe_limit,
+                    "statuses": normalized_statuses,
+                    "older_than_sec": safe_older_than_sec,
+                    "matched_count": 0,
+                    "pruned_count": 0,
+                    "result_files_deleted": 0,
+                    "result_files_missing": 0,
+                    "jobs": [],
+                }
+
+            root = self.project_root.resolve()
+            deleted_files = 0
+            missing_files = 0
+            pruned_jobs: list[dict[str, Any]] = []
+            job_ids: list[str] = []
+
+            for row in rows:
+                job_id = str(row["job_id"])
+                job_ids.append(job_id)
+                result_path = str(row["result_path"] or "").strip()
+                if delete_results and result_path:
+                    abs_result = (self.project_root / result_path).resolve()
+                    if _is_within_root(abs_result, root):
+                        if abs_result.exists():
+                            abs_result.unlink(missing_ok=True)
+                            deleted_files += 1
+                        else:
+                            missing_files += 1
+
+                pruned_jobs.append(
+                    {
+                        "job_id": job_id,
+                        "status": str(row["status"]),
+                        "finished_at_utc": str(row["finished_at_utc"] or ""),
+                        "result_path": result_path,
+                    }
+                )
+
+            con.executemany("DELETE FROM jobs WHERE job_id = ?", [(job_id,) for job_id in job_ids])
+            con.commit()
+        finally:
+            con.close()
+
+        return {
+            "requested_limit": safe_limit,
+            "statuses": normalized_statuses,
+            "older_than_sec": safe_older_than_sec,
+            "matched_count": len(rows),
+            "pruned_count": len(rows),
+            "result_files_deleted": deleted_files,
+            "result_files_missing": missing_files,
+            "jobs": pruned_jobs,
+        }
+
     def _write_result(self, job_id: str, payload: dict[str, Any]) -> str:
         self.results_dir.mkdir(parents=True, exist_ok=True)
         path = self.results_dir / f"{job_id}.json"
@@ -590,3 +695,11 @@ def _parse_iso_utc(value: str) -> datetime | None:
     if out.tzinfo is None:
         return out.replace(tzinfo=timezone.utc)
     return out
+
+
+def _is_within_root(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False

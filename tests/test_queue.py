@@ -276,6 +276,54 @@ class QueueTests(unittest.TestCase):
             self.assertEqual(int(stale["scanned_running_count"]), 1)
             self.assertEqual(str(stale["jobs"][0]["job_id"]), job_id)
 
+    def test_queue_prune_removes_finished_jobs_and_result_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            engine = JarvisEngine(root)
+
+            success_sub = engine.queue_submit(_base_task("task-q-0013"), dry_run=False, max_attempts=1)
+            success_id = success_sub["job"]["job_id"]
+            success_out = engine.queue_work_once(worker_id="worker-prune")
+            self.assertEqual(success_out["status"], "job_completed")
+
+            fail_task = _base_task("task-q-0014")
+            fail_task["parameters"]["simulate_delay_sec"] = 1.2
+            fail_task["parameters"]["execution_policy"] = {
+                "timeout_sec": 1,
+                "max_retries": 0,
+                "retry_delay_sec": 0.0,
+            }
+            fail_sub = engine.queue_submit(fail_task, dry_run=False, max_attempts=1)
+            fail_id = fail_sub["job"]["job_id"]
+            fail_out = engine.queue_work_once(worker_id="worker-prune")
+            self.assertEqual(fail_out["status"], "job_failed")
+            self.assertFalse(fail_out["requeued"])
+
+            cancel_sub = engine.queue_submit(_base_task("task-q-0015"), dry_run=False, max_attempts=1)
+            cancel_id = cancel_sub["job"]["job_id"]
+            engine.queue_cancel(cancel_id, reason="cleanup test")
+
+            success_job = engine.queue_get(success_id)["job"]
+            fail_job = engine.queue_get(fail_id)["job"]
+            success_result = str(success_job.get("result_path", "")).strip()
+            fail_result = str(fail_job.get("result_path", "")).strip()
+            self.assertTrue((root / success_result).exists())
+            self.assertTrue((root / fail_result).exists())
+
+            pruned = engine.queue_prune(limit=10, statuses=["SUCCESS", "FAILED", "CANCELLED"], older_than_sec=0)
+            self.assertEqual(pruned["status"], "ok")
+            self.assertEqual(int(pruned["pruned_count"]), 3)
+            self.assertGreaterEqual(int(pruned["result_files_deleted"]), 2)
+
+            self.assertFalse((root / success_result).exists())
+            self.assertFalse((root / fail_result).exists())
+            with self.assertRaises(ValueError):
+                engine.queue_get(success_id)
+            with self.assertRaises(ValueError):
+                engine.queue_get(fail_id)
+            with self.assertRaises(ValueError):
+                engine.queue_get(cancel_id)
+
 
 if __name__ == "__main__":
     unittest.main()
