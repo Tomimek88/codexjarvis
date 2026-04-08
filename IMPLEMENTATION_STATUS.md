@@ -31,6 +31,7 @@
   - Research source deduplication (SHA-based) for repeated refs
   - Execution policy v1: timeout + retry control with execution manifest
   - Run trace v1: per-stage timeline persisted per run
+  - Run inspect command: consolidated diagnostics view with trace timings + execution/research/truth overview
   - Queue runner v1: submit/list/get/work with retry-at-queue-level
   - Queue stats API/CLI (`queue-stats`) with retry/dead-failed counters
 

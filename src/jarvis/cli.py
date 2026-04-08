@@ -40,6 +40,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     trace_parser.add_argument("--run-id", type=str, required=True)
 
+    inspect_parser = subparsers.add_parser(
+        "inspect",
+        help="Show one consolidated diagnostics view for a run.",
+    )
+    inspect_parser.add_argument("--run-id", type=str, required=True)
+
     mem_query_parser = subparsers.add_parser(
         "memory-query",
         help="Query indexed run metadata from SQLite memory store.",
@@ -156,6 +162,8 @@ def main(argv: list[str] | None = None) -> int:
             payload = engine.replay(args.run_id)
         elif args.command == "trace":
             payload = engine.trace(args.run_id)
+        elif args.command == "inspect":
+            payload = engine.inspect(args.run_id)
         elif args.command == "memory-query":
             payload = engine.memory_query(
                 limit=args.limit,

@@ -464,6 +464,83 @@ class JarvisEngine:
             "research_bundle": self._load_run_research_bundle(run_id),
         }
 
+    def inspect(self, run_id: str) -> dict[str, Any]:
+        run_dir = self.store.run_path(run_id)
+        if not run_dir.exists():
+            raise ValidationError(f"Run '{run_id}' does not exist.")
+
+        meta = self._load_run_meta(run_id)
+        params = self._load_run_params(run_id)
+        summary = self._load_run_summary(run_id)
+        evidence = self.store.load_evidence(run_id)
+        validate_evidence_bundle(evidence)
+        trace = self._load_run_trace(run_id)
+        execution_manifest = self._load_run_execution_manifest(run_id)
+        research_bundle = self._load_run_research_bundle(run_id)
+        claim_validation = self._validate_task_claims({"parameters": params}, evidence)
+
+        trace_overview = self._summarize_trace(trace)
+        attempts = execution_manifest.get("attempts", [])
+        if not isinstance(attempts, list):
+            attempts = []
+
+        execution_overview = {
+            "final_status": str(execution_manifest.get("final_status", "UNKNOWN")),
+            "attempt_count": len(attempts),
+            "success_attempts": sum(1 for a in attempts if str(a.get("status", "")).upper() == "SUCCESS"),
+            "failed_attempts": sum(1 for a in attempts if str(a.get("status", "")).upper() != "SUCCESS"),
+            "total_attempt_duration_sec": round(
+                sum(float(a.get("duration_sec", 0.0) or 0.0) for a in attempts),
+                6,
+            ),
+            "policy": execution_manifest.get("policy", {}),
+        }
+
+        sources = research_bundle.get("sources", [])
+        if not isinstance(sources, list):
+            sources = []
+        research_overview = {
+            "source_count": int(research_bundle.get("source_count", 0)),
+            "error_count": len(research_bundle.get("errors", [])),
+            "deduplicated_count": int(research_bundle.get("deduplicated_count", 0)),
+            "ok_count": sum(1 for s in sources if str(s.get("status", "")).upper() == "OK"),
+            "duplicate_count": sum(1 for s in sources if str(s.get("status", "")).upper() == "DUPLICATE"),
+            "failed_count": sum(1 for s in sources if str(s.get("status", "")).upper() == "FAILED"),
+        }
+
+        artifacts = evidence.get("artifacts", [])
+        if not isinstance(artifacts, list):
+            artifacts = []
+        artifact_kind_counts: dict[str, int] = {}
+        for artifact in artifacts:
+            kind = str(artifact.get("kind", "unknown"))
+            artifact_kind_counts[kind] = artifact_kind_counts.get(kind, 0) + 1
+        evidence_overview = {
+            "status": str(evidence.get("status", "")),
+            "artifact_count": len(artifacts),
+            "artifact_kind_counts": artifact_kind_counts,
+            "metric_keys": sorted(evidence.get("metrics", {}).keys()) if isinstance(evidence.get("metrics", {}), dict) else [],
+        }
+
+        truth_overview = {
+            "all_supported": bool(claim_validation.get("all_supported", False)),
+            "supported_count": int(claim_validation.get("supported_count", 0)),
+            "unsupported_count": int(claim_validation.get("unsupported_count", 0)),
+            "blocked_user_claims": bool(has_unsupported_user_claims(claim_validation)),
+        }
+
+        return {
+            "status": "ok",
+            "run_id": run_id,
+            "meta": meta,
+            "summary": summary,
+            "evidence_overview": evidence_overview,
+            "trace_overview": trace_overview,
+            "execution_overview": execution_overview,
+            "research_overview": research_overview,
+            "truth_overview": truth_overview,
+        }
+
     def memory_query(
         self,
         *,
@@ -773,6 +850,19 @@ class JarvisEngine:
             return {"headline": "", "key_metrics": {}, "caveats": []}
         return load_json_file(path)
 
+    def _load_run_meta(self, run_id: str) -> dict[str, Any]:
+        path = self.store.run_path(run_id) / "meta.json"
+        if not path.exists():
+            return {}
+        return load_json_file(path)
+
+    def _load_run_params(self, run_id: str) -> dict[str, Any]:
+        path = self.store.run_path(run_id) / "params.json"
+        if not path.exists():
+            return {}
+        payload = load_json_file(path)
+        return payload if isinstance(payload, dict) else {}
+
     @staticmethod
     def _trace_event(trace: dict[str, Any], stage: str, details: dict[str, Any] | None = None) -> None:
         trace.setdefault("events", []).append(
@@ -835,6 +925,58 @@ class JarvisEngine:
         ]
         return "; ".join(part for part in parts if part)
 
+    @staticmethod
+    def _summarize_trace(trace: dict[str, Any]) -> dict[str, Any]:
+        events = trace.get("events", [])
+        if not isinstance(events, list):
+            events = []
+        stages = [str(item.get("stage", "")) for item in events if isinstance(item, dict)]
+        parsed: list[tuple[datetime, dict[str, Any]]] = []
+        for item in events:
+            if not isinstance(item, dict):
+                continue
+            stamp = item.get("timestamp_utc")
+            if not isinstance(stamp, str):
+                continue
+            dt = _parse_iso_utc(stamp)
+            if dt is None:
+                continue
+            parsed.append((dt, item))
+
+        transition_durations: list[dict[str, Any]] = []
+        stage_totals: dict[str, float] = {}
+        for idx in range(len(parsed) - 1):
+            dt1, ev1 = parsed[idx]
+            dt2, ev2 = parsed[idx + 1]
+            delta = max(0.0, (dt2 - dt1).total_seconds())
+            from_stage = str(ev1.get("stage", ""))
+            to_stage = str(ev2.get("stage", ""))
+            transition_durations.append(
+                {
+                    "from_stage": from_stage,
+                    "to_stage": to_stage,
+                    "duration_sec": round(delta, 6),
+                }
+            )
+            stage_totals[from_stage] = stage_totals.get(from_stage, 0.0) + delta
+
+        total_span_sec = 0.0
+        if len(parsed) >= 2:
+            total_span_sec = max(0.0, (parsed[-1][0] - parsed[0][0]).total_seconds())
+
+        sorted_stage_totals = sorted(stage_totals.items(), key=lambda x: (-x[1], x[0]))
+        slowest_stages = [
+            {"stage": stage, "duration_sec": round(duration, 6)}
+            for stage, duration in sorted_stage_totals[:5]
+        ]
+        return {
+            "event_count": len(events),
+            "stages": stages,
+            "total_span_sec": round(total_span_sec, 6),
+            "transitions": transition_durations,
+            "slowest_stages": slowest_stages,
+        }
+
 
 def _is_writable(path: Path) -> bool:
     path.mkdir(parents=True, exist_ok=True)
@@ -845,3 +987,16 @@ def _is_writable(path: Path) -> bool:
         return True
     except OSError:
         return False
+
+
+def _parse_iso_utc(value: str) -> datetime | None:
+    text = value.strip()
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        out = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if out.tzinfo is None:
+        return out.replace(tzinfo=timezone.utc)
+    return out

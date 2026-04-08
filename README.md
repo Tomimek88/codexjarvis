@@ -145,6 +145,7 @@ jarvis --root <project_root> dry-run --task-file <task.json>
 jarvis --root <project_root> run --task-file <task.json>
 jarvis --root <project_root> replay --run-id <run_id>
 jarvis --root <project_root> trace --run-id <run_id>
+jarvis --root <project_root> inspect --run-id <run_id>
 jarvis --root <project_root> memory-query --limit 20 [--domain generic] [--status SUCCESS] [--contains text]
 jarvis --root <project_root> memory-search --query "<text>" [--limit 10] [--domain generic] [--status SUCCESS]
 jarvis --root <project_root> memory-semantic-search --query "<text>" [--limit 10] [--domain generic] [--status SUCCESS] [--min-score 0.0]
@@ -212,6 +213,7 @@ jarvis --root <project_root> queue-work [--max-jobs 10] [--worker-id worker-1]
   - `data/runs/<run_id>/trace.json`
 - You can inspect these via:
   - `jarvis --root <project_root> trace --run-id <run_id>`
+  - `jarvis --root <project_root> inspect --run-id <run_id>` (consolidated run diagnostics)
 
 ## Queue Runner (Current)
 

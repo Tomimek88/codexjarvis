@@ -47,6 +47,17 @@ class TraceTests(unittest.TestCase):
             self.assertTrue((run_dir / "trace.json").exists())
             self.assertTrue((run_dir / "execution_manifest.json").exists())
 
+            inspect = engine.inspect(run_id)
+            self.assertEqual(inspect["status"], "ok")
+            self.assertEqual(inspect["run_id"], run_id)
+            self.assertIn("trace_overview", inspect)
+            self.assertIn("execution_overview", inspect)
+            self.assertIn("research_overview", inspect)
+            self.assertIn("truth_overview", inspect)
+            self.assertGreaterEqual(inspect["trace_overview"]["event_count"], 1)
+            self.assertGreaterEqual(inspect["trace_overview"]["total_span_sec"], 0.0)
+            self.assertEqual(inspect["execution_overview"]["final_status"], "SUCCESS")
+
 
 if __name__ == "__main__":
     unittest.main()
