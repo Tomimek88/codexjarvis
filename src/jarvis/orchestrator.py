@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import platform
+import shutil
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -1347,6 +1348,84 @@ class JarvisEngine:
             "size_bytes": int(zip_path.stat().st_size),
         }
 
+    def import_run(
+        self,
+        zip_file: Path,
+        *,
+        index_memory: bool = True,
+        link_cache: bool = True,
+        overwrite: bool = False,
+    ) -> dict[str, Any]:
+        zip_path = zip_file.resolve()
+        if not zip_path.exists() or not zip_path.is_file():
+            raise ValidationError(f"zip_file '{zip_path}' does not exist or is not a file.")
+
+        with zipfile.ZipFile(zip_path, mode="r") as zf:
+            members = [info.filename.replace("\\", "/") for info in zf.infolist() if not info.is_dir()]
+            run_ids = _extract_run_ids_from_members(members)
+            if len(run_ids) != 1:
+                raise ValidationError(
+                    f"ZIP must contain exactly one run under data/runs/<run_id>/, got {len(run_ids)}."
+                )
+            run_id = sorted(run_ids)[0]
+            prefix = f"data/runs/{run_id}/"
+            run_members = [member for member in members if member.startswith(prefix)]
+            if len(run_members) == 0:
+                raise ValidationError(f"No files found under '{prefix}' in ZIP.")
+
+            run_dir = self.store.run_path(run_id)
+            if run_dir.exists():
+                if not overwrite:
+                    raise ValidationError(
+                        f"Run '{run_id}' already exists. Use overwrite=true to replace it."
+                    )
+                shutil.rmtree(run_dir)
+
+            files_written = 0
+            run_root = run_dir.resolve()
+            for member in run_members:
+                rel = member[len(prefix) :]
+                if not rel:
+                    continue
+                rel_path = Path(rel)
+                if any(part == ".." for part in rel_path.parts):
+                    raise ValidationError(f"Unsafe ZIP member path: {member}")
+
+                target = (run_dir / rel_path).resolve()
+                if not _is_within_root(target, run_root):
+                    raise ValidationError(f"ZIP member escapes run directory: {member}")
+
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with target.open("wb") as f:
+                    f.write(zf.read(member))
+                files_written += 1
+
+        evidence = load_json_file(run_dir / "evidence_bundle.json")
+        validate_evidence_bundle(evidence)
+        meta = load_json_file(run_dir / "meta.json")
+
+        memory_indexed = False
+        if index_memory:
+            self.index_run(run_id)
+            memory_indexed = True
+
+        cache_linked = False
+        if link_cache and str(evidence.get("status", "")).upper() == "SUCCESS":
+            cache_key = str(meta.get("cache_key", "")).strip()
+            if cache_key:
+                self.store.set_cache_entry(cache_key, run_id)
+                cache_linked = True
+
+        return {
+            "status": "ok",
+            "run_id": run_id,
+            "zip_path": str(zip_path),
+            "files_imported": files_written,
+            "memory_indexed": memory_indexed,
+            "cache_linked": cache_linked,
+            "overwrite": bool(overwrite),
+        }
+
     def memory_query(
         self,
         *,
@@ -1911,3 +1990,17 @@ def _as_project_relative(path: Path, project_root: Path) -> str:
         return str(abs_path.relative_to(project_root.resolve()).as_posix())
     except ValueError:
         return str(abs_path)
+
+
+def _extract_run_ids_from_members(members: list[str]) -> set[str]:
+    run_ids: set[str] = set()
+    for member in members:
+        parts = member.split("/")
+        if len(parts) < 4:
+            continue
+        if parts[0] != "data" or parts[1] != "runs":
+            continue
+        run_id = parts[2].strip()
+        if run_id:
+            run_ids.add(run_id)
+    return run_ids

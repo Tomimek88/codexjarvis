@@ -71,6 +71,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     export_parser.add_argument("--run-id", type=str, required=True)
 
+    import_parser = subparsers.add_parser(
+        "import-run",
+        help="Import one run ZIP archive into local data/runs.",
+    )
+    import_parser.add_argument("--zip-file", type=Path, required=True)
+    import_parser.add_argument("--skip-memory-index", action="store_true")
+    import_parser.add_argument("--skip-cache-link", action="store_true")
+    import_parser.add_argument("--overwrite", action="store_true")
+
     report_parser = subparsers.add_parser(
         "report",
         help="Generate run report files (JSON + Markdown).",
@@ -252,6 +261,13 @@ def main(argv: list[str] | None = None) -> int:
             payload = engine.compare_runs(args.run_a, args.run_b)
         elif args.command == "export-run":
             payload = engine.export_run(args.run_id)
+        elif args.command == "import-run":
+            payload = engine.import_run(
+                args.zip_file.resolve(),
+                index_memory=not bool(args.skip_memory_index),
+                link_cache=not bool(args.skip_cache_link),
+                overwrite=bool(args.overwrite),
+            )
         elif args.command == "report":
             payload = engine.report_run(args.run_id)
         elif args.command == "audit-run":
