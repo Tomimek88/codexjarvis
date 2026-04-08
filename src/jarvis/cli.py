@@ -60,6 +60,40 @@ def build_parser() -> argparse.ArgumentParser:
         help="Index an existing run from data/runs/<run_id> into SQLite memory store.",
     )
     mem_index_parser.add_argument("--run-id", type=str, required=True)
+
+    queue_submit_parser = subparsers.add_parser(
+        "queue-submit",
+        help="Submit task file into queue for asynchronous processing.",
+    )
+    queue_submit_parser.add_argument("--task-file", type=Path, required=True)
+    queue_submit_parser.add_argument("--dry-run", action="store_true")
+    queue_submit_parser.add_argument("--max-attempts", type=int, default=1)
+
+    queue_list_parser = subparsers.add_parser(
+        "queue-list",
+        help="List queue jobs.",
+    )
+    queue_list_parser.add_argument("--limit", type=int, default=20)
+    queue_list_parser.add_argument("--status", type=str, required=False)
+
+    queue_get_parser = subparsers.add_parser(
+        "queue-get",
+        help="Get one queue job by id.",
+    )
+    queue_get_parser.add_argument("--job-id", type=str, required=True)
+
+    queue_work_once_parser = subparsers.add_parser(
+        "queue-work-once",
+        help="Process at most one queued job.",
+    )
+    queue_work_once_parser.add_argument("--worker-id", type=str, required=False)
+
+    queue_work_parser = subparsers.add_parser(
+        "queue-work",
+        help="Process queued jobs in a loop.",
+    )
+    queue_work_parser.add_argument("--max-jobs", type=int, default=10)
+    queue_work_parser.add_argument("--worker-id", type=str, required=False)
     return parser
 
 
@@ -90,6 +124,20 @@ def main(argv: list[str] | None = None) -> int:
             payload = engine.memory_get(args.run_id)
         elif args.command == "memory-index":
             payload = engine.index_run(args.run_id)
+        elif args.command == "queue-submit":
+            payload = engine.queue_submit_from_file(
+                args.task_file.resolve(),
+                dry_run=bool(args.dry_run),
+                max_attempts=args.max_attempts,
+            )
+        elif args.command == "queue-list":
+            payload = engine.queue_list(limit=args.limit, status=args.status)
+        elif args.command == "queue-get":
+            payload = engine.queue_get(args.job_id)
+        elif args.command == "queue-work-once":
+            payload = engine.queue_work_once(worker_id=args.worker_id)
+        elif args.command == "queue-work":
+            payload = engine.queue_work(max_jobs=args.max_jobs, worker_id=args.worker_id)
         else:  # pragma: no cover
             parser.error(f"Unsupported command: {args.command}")
             return 2

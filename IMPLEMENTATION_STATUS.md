@@ -23,6 +23,7 @@
   - Research Layer v1: source collection + hashed source snapshots + per-run manifest
   - Execution policy v1: timeout + retry control with execution manifest
   - Run trace v1: per-stage timeline persisted per run
+  - Queue runner v1: submit/list/get/work with retry-at-queue-level
 
 ## Current known external blockers on this PC
 

@@ -1,15 +1,18 @@
 from __future__ import annotations
 
+import json
 import platform
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from .constants import FALLBACK_NO_GUESS
 from .contracts import ValidationError, load_json_file, validate_evidence_bundle, validate_task_request
 from .execution import build_execution_policy, execute_with_policy
 from .hashing import compute_cache_key, compute_code_hash, sha256_object
 from .memory_db import MemoryStore
+from .queue_db import QueueStore
 from .research import collect_research_artifacts
 from .run_store import RunStore
 from .simulator import execute_domain_simulation
@@ -29,6 +32,8 @@ class JarvisEngine:
         self.store.ensure_layout()
         self.memory = MemoryStore(project_root)
         self.memory.ensure_schema()
+        self.queue = QueueStore(project_root)
+        self.queue.ensure_schema()
 
     def health(self) -> dict[str, Any]:
         contracts_present = {
@@ -48,6 +53,8 @@ class JarvisEngine:
             "storage_writable": writable,
             "memory_db_path": str(self.memory.db_path),
             "memory_db_exists": self.memory.db_path.exists(),
+            "queue_db_path": str(self.queue.db_path),
+            "queue_db_exists": self.queue.db_path.exists(),
             "toolchain": {
                 "python_version": platform.python_version(),
                 "platform": platform.platform(),
@@ -497,6 +504,104 @@ class JarvisEngine:
         )
         return {"status": "ok", "run_id": run_id, "indexed": True}
 
+    def queue_submit_from_file(
+        self,
+        task_file: Path,
+        *,
+        dry_run: bool = False,
+        max_attempts: int = 1,
+    ) -> dict[str, Any]:
+        task = load_json_file(task_file)
+        validate_task_request(task)
+        return self.queue_submit(task, dry_run=dry_run, max_attempts=max_attempts)
+
+    def queue_submit(
+        self,
+        task: dict[str, Any],
+        *,
+        dry_run: bool = False,
+        max_attempts: int = 1,
+    ) -> dict[str, Any]:
+        validate_task_request(task)
+        mode = "dry_run" if dry_run else "run"
+        record = self.queue.submit_job(
+            task=task,
+            mode=mode,
+            max_attempts=max(1, min(int(max_attempts), 20)),
+        )
+        return {"status": "queued", "job": record}
+
+    def queue_list(self, *, limit: int = 20, status: str | None = None) -> dict[str, Any]:
+        rows = self.queue.list_jobs(limit=limit, status=status)
+        return {"status": "ok", "count": len(rows), "jobs": rows}
+
+    def queue_get(self, job_id: str) -> dict[str, Any]:
+        return {"status": "ok", "job": self.queue.get_job(job_id)}
+
+    def queue_work_once(self, *, worker_id: str | None = None) -> dict[str, Any]:
+        wid = worker_id or f"worker_{uuid4().hex[:8]}"
+        job = self.queue.claim_next_job(wid)
+        if job is None:
+            return {"status": "idle", "message": "No queued jobs.", "worker_id": wid}
+
+        mode = str(job.get("mode", "run"))
+        dry_run = mode == "dry_run"
+        task = job.get("task")
+        if not isinstance(task, dict):
+            task = json.loads(job.get("task_json", "{}"))
+
+        try:
+            result = self.run(task, dry_run=dry_run)
+            run_status = str(result.get("status", ""))
+            run_id = result.get("run_id")
+            if run_status == "failed":
+                error = self._extract_run_error(result)
+                updated = self.queue.fail_job(job_id=job["job_id"], error=error, result_payload=result)
+                return {
+                    "status": "job_failed",
+                    "job": updated,
+                    "result": result,
+                    "requeued": updated.get("status") == "QUEUED",
+                }
+
+            updated = self.queue.complete_job(
+                job_id=job["job_id"],
+                run_id=str(run_id) if run_id else "",
+                result_payload=result,
+            )
+            return {"status": "job_completed", "job": updated, "result": result}
+        except Exception as exc:  # pragma: no cover
+            fallback = {"status": "error", "error": f"{type(exc).__name__}: {exc}"}
+            updated = self.queue.fail_job(
+                job_id=job["job_id"],
+                error=f"{type(exc).__name__}: {exc}",
+                result_payload=fallback,
+            )
+            return {
+                "status": "job_failed",
+                "job": updated,
+                "result": fallback,
+                "requeued": updated.get("status") == "QUEUED",
+            }
+
+    def queue_work(self, *, max_jobs: int = 10, worker_id: str | None = None) -> dict[str, Any]:
+        max_jobs = max(1, min(int(max_jobs), 100))
+        wid = worker_id or f"worker_{uuid4().hex[:8]}"
+        processed = 0
+        outputs: list[dict[str, Any]] = []
+        while processed < max_jobs:
+            out = self.queue_work_once(worker_id=wid)
+            outputs.append(out)
+            if out.get("status") == "idle":
+                break
+            processed += 1
+        return {
+            "status": "ok",
+            "worker_id": wid,
+            "processed": processed,
+            "results": outputs,
+        }
+
     def _validate_task_claims(
         self,
         task: dict[str, Any],
@@ -541,6 +646,18 @@ class JarvisEngine:
                 "details": details or {},
             }
         )
+
+    @staticmethod
+    def _extract_run_error(result: dict[str, Any]) -> str:
+        evidence = result.get("evidence_bundle", {})
+        if isinstance(evidence, dict):
+            logs = evidence.get("logs", {})
+            if isinstance(logs, dict):
+                err = str(logs.get("stderr", "")).strip()
+                if err:
+                    return err
+        err_fallback = str(result.get("error", "")).strip()
+        return err_fallback or "Run failed."
 
 
 def _is_writable(path: Path) -> bool:

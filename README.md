@@ -11,6 +11,7 @@ This repository now contains a working baseline for:
 - evidence bundle creation and validation
 - truth-layer claim/evidence validation (unsupported user claims are blocked)
 - research/source tracking with local files + optional URLs
+- queue runner for asynchronous task processing
 - replay from stored runs
 - SQLite memory index for prior runs and artifacts
 - bootstrap scripts for local setup
@@ -35,6 +36,7 @@ src/jarvis/
   hashing.py                # Hashing and cache key
   memory_db.py              # SQLite long-term run index
   execution.py              # timeout/retry execution policy
+  queue_db.py               # async job queue store
   orchestrator.py           # Planner/executor baseline
   research.py               # Source collection + tracking
   run_store.py              # Persistent run and cache index storage
@@ -146,6 +148,11 @@ jarvis --root <project_root> trace --run-id <run_id>
 jarvis --root <project_root> memory-query --limit 20 [--domain generic] [--status SUCCESS] [--contains text]
 jarvis --root <project_root> memory-get --run-id <run_id>
 jarvis --root <project_root> memory-index --run-id <run_id>
+jarvis --root <project_root> queue-submit --task-file <task.json> [--dry-run] [--max-attempts 1]
+jarvis --root <project_root> queue-list [--status QUEUED] [--limit 20]
+jarvis --root <project_root> queue-get --job-id <job_id>
+jarvis --root <project_root> queue-work-once [--worker-id worker-1]
+jarvis --root <project_root> queue-work [--max-jobs 10] [--worker-id worker-1]
 ```
 
 ## Memory Layer (Current)
@@ -180,6 +187,15 @@ jarvis --root <project_root> memory-index --run-id <run_id>
   - `data/runs/<run_id>/trace.json`
 - You can inspect these via:
   - `jarvis --root <project_root> trace --run-id <run_id>`
+
+## Queue Runner (Current)
+
+- Queue state is stored in `data/queue/queue.db`.
+- Job results are stored in `data/queue/results/<job_id>.json`.
+- Submit now, execute later pattern:
+  1. `queue-submit`
+  2. `queue-work-once` or `queue-work`
+  3. `queue-get` / `queue-list`
 
 ## Evidence-First Guarantee in This Scaffold
 

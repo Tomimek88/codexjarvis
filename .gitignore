@@ -13,6 +13,9 @@ build/
 # Runtime data
 data/cache/cache_index.json
 data/memory/*.db
+data/queue/*.db
+data/queue/results/*
+!data/queue/results/.gitkeep
 data/runs/*
 !data/runs/.gitkeep
 artifacts/*
