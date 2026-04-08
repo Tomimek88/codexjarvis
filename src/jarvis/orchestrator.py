@@ -1435,7 +1435,15 @@ class JarvisEngine:
             "rebuilt_entry_count": len(entries),
         }
 
-    def doctor(self, *, fix: bool = False) -> dict[str, Any]:
+    def doctor(
+        self,
+        *,
+        fix: bool = False,
+        queue_prune: bool = False,
+        queue_prune_limit: int = 200,
+        queue_prune_older_than_sec: int = 86400,
+        queue_prune_delete_results: bool = False,
+    ) -> dict[str, Any]:
         snapshot_before = self._collect_doctor_snapshot()
         warnings_before = self._build_doctor_warnings(snapshot_before)
         fix_actions: list[dict[str, Any]] = []
@@ -1514,6 +1522,26 @@ class JarvisEngine:
                         "result": {
                             "requeued_count": int(requeued.get("requeued_count", 0)),
                             "requested_limit": int(requeued.get("requested_limit", 0)),
+                        },
+                    }
+                )
+            if queue_prune:
+                pruned = self.queue_prune(
+                    limit=queue_prune_limit,
+                    statuses=["SUCCESS", "FAILED", "CANCELLED"],
+                    older_than_sec=queue_prune_older_than_sec,
+                    delete_results=queue_prune_delete_results,
+                    dry_run=False,
+                )
+                fix_actions.append(
+                    {
+                        "action": "queue_prune",
+                        "result": {
+                            "pruned_count": int(pruned.get("pruned_count", 0)),
+                            "matched_count": int(pruned.get("matched_count", 0)),
+                            "requested_limit": int(pruned.get("requested_limit", 0)),
+                            "older_than_sec": int(pruned.get("older_than_sec", 0)),
+                            "result_files_deleted": int(pruned.get("result_files_deleted", 0)),
                         },
                     }
                 )

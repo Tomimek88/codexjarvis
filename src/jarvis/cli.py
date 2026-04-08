@@ -27,6 +27,28 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Attempt automatic fixes for common issues (legacy run files, cache index, failed queue jobs).",
     )
+    doctor_parser.add_argument(
+        "--queue-prune",
+        action="store_true",
+        help="With --fix, additionally prune finished queue jobs.",
+    )
+    doctor_parser.add_argument(
+        "--queue-prune-limit",
+        type=int,
+        default=200,
+        help="Max number of queue jobs to prune in one doctor fix pass.",
+    )
+    doctor_parser.add_argument(
+        "--queue-prune-older-than-sec",
+        type=int,
+        default=86400,
+        help="Only prune jobs older than this age (seconds) by finished_at_utc.",
+    )
+    doctor_parser.add_argument(
+        "--queue-prune-delete-results",
+        action="store_true",
+        help="With --queue-prune, also delete queue result files referenced by pruned jobs.",
+    )
 
     run_parser = subparsers.add_parser("run", help="Run task from task JSON file.")
     run_parser.add_argument("--task-file", type=Path, required=True)
@@ -331,7 +353,13 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "health":
             payload = engine.health()
         elif args.command == "doctor":
-            payload = engine.doctor(fix=bool(args.fix))
+            payload = engine.doctor(
+                fix=bool(args.fix),
+                queue_prune=bool(args.queue_prune),
+                queue_prune_limit=args.queue_prune_limit,
+                queue_prune_older_than_sec=args.queue_prune_older_than_sec,
+                queue_prune_delete_results=bool(args.queue_prune_delete_results),
+            )
         elif args.command == "run":
             payload = engine.run_from_file(args.task_file.resolve(), dry_run=False)
         elif args.command == "batch-run":

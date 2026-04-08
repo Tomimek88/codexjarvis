@@ -141,7 +141,7 @@ docker compose run --rm jarvis python -m jarvis run --root /app --task-file /app
 
 ```bash
 jarvis --root <project_root> health
-jarvis --root <project_root> doctor [--fix]
+jarvis --root <project_root> doctor [--fix] [--queue-prune] [--queue-prune-limit 200] [--queue-prune-older-than-sec 86400] [--queue-prune-delete-results]
 jarvis --root <project_root> dry-run --task-file <task.json>
 jarvis --root <project_root> run --task-file <task.json>
 jarvis --root <project_root> batch-run --tasks-dir <dir> [--pattern *.json] [--max-tasks 0] [--dry-run] [--non-recursive] [--stop-on-error]
@@ -260,6 +260,8 @@ Tip: run `queue-clean-results --dry-run` to preview orphan result-file cleanup.
   - rebuilds cache index when invalid entries are detected
   - recovers stale queue jobs stuck in `RUNNING`
   - requeues dead failed queue jobs for retry
+- optional: `doctor --fix --queue-prune` prunes old finished queue jobs in one pass
+  (default pruning is metadata-only; add `--queue-prune-delete-results` to remove result files too).
 
 ## Run History (Current)
 

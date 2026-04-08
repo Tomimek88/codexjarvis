@@ -138,6 +138,28 @@ class DoctorTests(unittest.TestCase):
             self.assertIn("cache_rebuild", actions)
             self.assertIn("queue_requeue_failed", actions)
 
+    def test_doctor_fix_optionally_prunes_finished_queue_jobs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            engine = JarvisEngine(root)
+            submitted = engine.queue_submit(_task("task-doctor-prune-01"), dry_run=False, max_attempts=1)
+            job_id = submitted["job"]["job_id"]
+            worked = engine.queue_work_once(worker_id="worker-doctor-prune")
+            self.assertEqual(worked["status"], "job_completed")
+
+            doctor = engine.doctor(
+                fix=True,
+                queue_prune=True,
+                queue_prune_limit=10,
+                queue_prune_older_than_sec=0,
+                queue_prune_delete_results=False,
+            )
+            actions = [item for item in doctor.get("fix_actions", []) if item.get("action") == "queue_prune"]
+            self.assertTrue(len(actions) >= 1)
+            self.assertGreaterEqual(int(actions[0].get("result", {}).get("pruned_count", 0)), 1)
+            with self.assertRaises(ValueError):
+                engine.queue_get(job_id)
+
 
 if __name__ == "__main__":
     unittest.main()
