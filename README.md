@@ -174,6 +174,7 @@ jarvis --root <project_root> queue-list [--status QUEUED] [--limit 20]
 jarvis --root <project_root> queue-get --job-id <job_id>
 jarvis --root <project_root> queue-stats
 jarvis --root <project_root> queue-requeue-failed [--limit 20] [--keep-attempts]
+jarvis --root <project_root> queue-recover-running [--limit 20] [--max-age-sec 300] [--force-requeue] [--reset-attempts]
 jarvis --root <project_root> queue-cancel --job-id <job_id> [--reason "..."]
 jarvis --root <project_root> queue-work-once [--worker-id worker-1]
 jarvis --root <project_root> queue-work [--max-jobs 10] [--worker-id worker-1]
@@ -249,6 +250,7 @@ jarvis --root <project_root> queue-work [--max-jobs 10] [--worker-id worker-1]
 - `doctor --fix` attempts safe auto-remediation for common problems:
   - backfills missing legacy run files (`execution_manifest.json`, `trace.json`)
   - rebuilds cache index when invalid entries are detected
+  - recovers stale queue jobs stuck in `RUNNING`
   - requeues dead failed queue jobs for retry
 
 ## Run History (Current)

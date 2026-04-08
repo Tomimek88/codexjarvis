@@ -262,6 +262,15 @@ def build_parser() -> argparse.ArgumentParser:
     queue_requeue_parser.add_argument("--limit", type=int, default=20)
     queue_requeue_parser.add_argument("--keep-attempts", action="store_true")
 
+    queue_recover_parser = subparsers.add_parser(
+        "queue-recover-running",
+        help="Recover stale RUNNING jobs back to QUEUED or FAILED state.",
+    )
+    queue_recover_parser.add_argument("--limit", type=int, default=20)
+    queue_recover_parser.add_argument("--max-age-sec", type=int, default=300)
+    queue_recover_parser.add_argument("--force-requeue", action="store_true")
+    queue_recover_parser.add_argument("--reset-attempts", action="store_true")
+
     queue_cancel_parser = subparsers.add_parser(
         "queue-cancel",
         help="Cancel one queue job by id.",
@@ -427,6 +436,13 @@ def main(argv: list[str] | None = None) -> int:
             payload = engine.queue_requeue_failed(
                 limit=args.limit,
                 reset_attempts=not bool(args.keep_attempts),
+            )
+        elif args.command == "queue-recover-running":
+            payload = engine.queue_recover_running(
+                limit=args.limit,
+                max_age_sec=args.max_age_sec,
+                force_requeue=bool(args.force_requeue),
+                reset_attempts=bool(args.reset_attempts),
             )
         elif args.command == "queue-cancel":
             payload = engine.queue_cancel(args.job_id, reason=args.reason)

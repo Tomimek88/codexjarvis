@@ -49,6 +49,7 @@
   - Queue runner v1: submit/list/get/work with retry-at-queue-level
   - Queue stats API/CLI (`queue-stats`) with retry/dead-failed counters
   - Queue recovery command: `queue-requeue-failed`
+  - Queue stale-running recovery command: `queue-recover-running`
   - Queue cancellation command: `queue-cancel`
 
 ## Current known external blockers on this PC

@@ -1481,7 +1481,28 @@ class JarvisEngine:
                     }
                 )
 
-            dead_failed_count = int(snapshot_before["queue_stats"].get("dead_failed_count", 0))
+            recovered_running = self.queue_recover_running(
+                limit=200,
+                max_age_sec=600,
+                force_requeue=False,
+                reset_attempts=False,
+            )
+            if int(recovered_running.get("stale_count", 0)) > 0:
+                fix_actions.append(
+                    {
+                        "action": "queue_recover_running",
+                        "result": {
+                            "stale_count": int(recovered_running.get("stale_count", 0)),
+                            "recovered_count": int(recovered_running.get("recovered_count", 0)),
+                            "marked_failed_count": int(recovered_running.get("marked_failed_count", 0)),
+                            "max_age_sec": int(recovered_running.get("max_age_sec", 0)),
+                        },
+                    }
+                )
+
+            current_queue = self.queue_stats()
+            current_queue_stats = current_queue.get("stats", {}) if isinstance(current_queue, dict) else {}
+            dead_failed_count = int(current_queue_stats.get("dead_failed_count", 0))
             if dead_failed_count > 0:
                 requeued = self.queue_requeue_failed(limit=dead_failed_count, reset_attempts=True)
                 fix_actions.append(
@@ -2009,6 +2030,31 @@ class JarvisEngine:
             "status": "ok",
             "requested_limit": out.get("requested_limit", 0),
             "requeued_count": out.get("requeued_count", 0),
+            "jobs": out.get("jobs", []),
+        }
+
+    def queue_recover_running(
+        self,
+        *,
+        limit: int = 20,
+        max_age_sec: int = 300,
+        force_requeue: bool = False,
+        reset_attempts: bool = False,
+    ) -> dict[str, Any]:
+        out = self.queue.recover_stale_running(
+            limit=limit,
+            max_age_sec=max_age_sec,
+            force_requeue=force_requeue,
+            reset_attempts=reset_attempts,
+        )
+        return {
+            "status": "ok",
+            "requested_limit": out.get("requested_limit", 0),
+            "max_age_sec": out.get("max_age_sec", 0),
+            "scanned_running_count": out.get("scanned_running_count", 0),
+            "stale_count": out.get("stale_count", 0),
+            "recovered_count": out.get("recovered_count", 0),
+            "marked_failed_count": out.get("marked_failed_count", 0),
             "jobs": out.get("jobs", []),
         }
 

@@ -396,6 +396,105 @@ class QueueStore:
             con.close()
         return self.get_job(job_id)
 
+    def recover_stale_running(
+        self,
+        *,
+        limit: int = 20,
+        max_age_sec: int = 300,
+        force_requeue: bool = False,
+        reset_attempts: bool = False,
+    ) -> dict[str, Any]:
+        self.ensure_schema()
+        safe_age_sec = max(1, min(int(max_age_sec), 31_536_000))
+        safe_limit = max(1, min(int(limit), 10000)) if int(limit) > 0 else 0
+        now = datetime.now(timezone.utc)
+
+        con = self._connect()
+        try:
+            if safe_limit > 0:
+                rows = con.execute(
+                    """
+                    SELECT *
+                    FROM jobs
+                    WHERE status = 'RUNNING'
+                    ORDER BY started_at_utc ASC, job_id ASC
+                    LIMIT ?
+                    """,
+                    (safe_limit,),
+                ).fetchall()
+            else:
+                rows = con.execute(
+                    """
+                    SELECT *
+                    FROM jobs
+                    WHERE status = 'RUNNING'
+                    ORDER BY started_at_utc ASC, job_id ASC
+                    """
+                ).fetchall()
+
+            stale_rows: list[sqlite3.Row] = []
+            for row in rows:
+                started_text = row["started_at_utc"]
+                started_at = _parse_iso_utc(str(started_text)) if started_text else None
+                if started_at is None:
+                    stale_rows.append(row)
+                    continue
+                age_sec = (now - started_at).total_seconds()
+                if age_sec >= float(safe_age_sec):
+                    stale_rows.append(row)
+
+            recovered_ids: list[str] = []
+            failed_ids: list[str] = []
+            for row in stale_rows:
+                job_id = str(row["job_id"])
+                attempts = int(row["attempts"])
+                max_attempts = int(row["max_attempts"])
+                can_requeue = bool(force_requeue) or attempts < max_attempts
+                if can_requeue:
+                    new_attempts = 0 if reset_attempts else attempts
+                    con.execute(
+                        """
+                        UPDATE jobs
+                        SET status='QUEUED',
+                            started_at_utc=NULL,
+                            finished_at_utc=NULL,
+                            worker_id='',
+                            run_id='',
+                            result_path='',
+                            last_error='Recovered stale RUNNING job.',
+                            attempts=?
+                        WHERE job_id=?
+                        """,
+                        (new_attempts, job_id),
+                    )
+                    recovered_ids.append(job_id)
+                else:
+                    con.execute(
+                        """
+                        UPDATE jobs
+                        SET status='FAILED',
+                            finished_at_utc=?,
+                            last_error='Stale RUNNING job exceeded max_attempts.'
+                        WHERE job_id=?
+                        """,
+                        (_now_utc(), job_id),
+                    )
+                    failed_ids.append(job_id)
+            con.commit()
+        finally:
+            con.close()
+
+        jobs = [self.get_job(job_id) for job_id in recovered_ids + failed_ids]
+        return {
+            "requested_limit": safe_limit,
+            "max_age_sec": safe_age_sec,
+            "scanned_running_count": len(rows),
+            "stale_count": len(stale_rows),
+            "recovered_count": len(recovered_ids),
+            "marked_failed_count": len(failed_ids),
+            "jobs": jobs,
+        }
+
     def _write_result(self, job_id: str, payload: dict[str, Any]) -> str:
         self.results_dir.mkdir(parents=True, exist_ok=True)
         path = self.results_dir / f"{job_id}.json"
@@ -417,3 +516,16 @@ class QueueStore:
 
 def _now_utc() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _parse_iso_utc(value: str) -> datetime | None:
+    text = value.strip()
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        out = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if out.tzinfo is None:
+        return out.replace(tzinfo=timezone.utc)
+    return out

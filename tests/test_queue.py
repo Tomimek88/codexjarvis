@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from jarvis.orchestrator import JarvisEngine
@@ -167,6 +168,67 @@ class QueueTests(unittest.TestCase):
 
             fetched = engine.queue_get(job_id)
             self.assertEqual(fetched["job"]["status"], "CANCELLED")
+
+    def test_queue_recover_running_requeues_stale_job(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            engine = JarvisEngine(root)
+            submitted = engine.queue_submit(_base_task("task-q-0008"), dry_run=False, max_attempts=2)
+            job_id = submitted["job"]["job_id"]
+            claimed = engine.queue.claim_next_job("worker-recover")
+            self.assertIsNotNone(claimed)
+            self.assertEqual(str(claimed["status"]), "RUNNING")
+
+            stale_started = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+            con = engine.queue._connect()
+            try:
+                con.execute(
+                    "UPDATE jobs SET started_at_utc = ? WHERE job_id = ?",
+                    (stale_started, job_id),
+                )
+                con.commit()
+            finally:
+                con.close()
+
+            recovered = engine.queue_recover_running(limit=10, max_age_sec=60)
+            self.assertEqual(recovered["status"], "ok")
+            self.assertEqual(int(recovered["stale_count"]), 1)
+            self.assertEqual(int(recovered["recovered_count"]), 1)
+            self.assertEqual(int(recovered["marked_failed_count"]), 0)
+
+            fetched = engine.queue_get(job_id)
+            self.assertEqual(fetched["job"]["status"], "QUEUED")
+            self.assertEqual(int(fetched["job"]["attempts"]), 1)
+
+    def test_queue_recover_running_marks_failed_when_attempts_exhausted(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            engine = JarvisEngine(root)
+            submitted = engine.queue_submit(_base_task("task-q-0009"), dry_run=False, max_attempts=1)
+            job_id = submitted["job"]["job_id"]
+            claimed = engine.queue.claim_next_job("worker-recover")
+            self.assertIsNotNone(claimed)
+            self.assertEqual(str(claimed["status"]), "RUNNING")
+
+            stale_started = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+            con = engine.queue._connect()
+            try:
+                con.execute(
+                    "UPDATE jobs SET started_at_utc = ? WHERE job_id = ?",
+                    (stale_started, job_id),
+                )
+                con.commit()
+            finally:
+                con.close()
+
+            recovered = engine.queue_recover_running(limit=10, max_age_sec=60)
+            self.assertEqual(recovered["status"], "ok")
+            self.assertEqual(int(recovered["stale_count"]), 1)
+            self.assertEqual(int(recovered["recovered_count"]), 0)
+            self.assertEqual(int(recovered["marked_failed_count"]), 1)
+
+            fetched = engine.queue_get(job_id)
+            self.assertEqual(fetched["job"]["status"], "FAILED")
 
 
 if __name__ == "__main__":
