@@ -46,6 +46,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     inspect_parser.add_argument("--run-id", type=str, required=True)
 
+    compare_parser = subparsers.add_parser(
+        "compare",
+        help="Compare two runs (status/hashes/metrics/artifacts).",
+    )
+    compare_parser.add_argument("--run-a", type=str, required=True)
+    compare_parser.add_argument("--run-b", type=str, required=True)
+
     mem_query_parser = subparsers.add_parser(
         "memory-query",
         help="Query indexed run metadata from SQLite memory store.",
@@ -164,6 +171,8 @@ def main(argv: list[str] | None = None) -> int:
             payload = engine.trace(args.run_id)
         elif args.command == "inspect":
             payload = engine.inspect(args.run_id)
+        elif args.command == "compare":
+            payload = engine.compare_runs(args.run_a, args.run_b)
         elif args.command == "memory-query":
             payload = engine.memory_query(
                 limit=args.limit,

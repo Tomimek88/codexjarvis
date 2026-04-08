@@ -541,6 +541,112 @@ class JarvisEngine:
             "truth_overview": truth_overview,
         }
 
+    def compare_runs(self, run_a: str, run_b: str) -> dict[str, Any]:
+        path_a = self.store.run_path(run_a)
+        path_b = self.store.run_path(run_b)
+        if not path_a.exists():
+            raise ValidationError(f"Run '{run_a}' does not exist.")
+        if not path_b.exists():
+            raise ValidationError(f"Run '{run_b}' does not exist.")
+
+        evidence_a = self.store.load_evidence(run_a)
+        evidence_b = self.store.load_evidence(run_b)
+        validate_evidence_bundle(evidence_a)
+        validate_evidence_bundle(evidence_b)
+
+        meta_a = self._load_run_meta(run_a)
+        meta_b = self._load_run_meta(run_b)
+
+        metrics_a = evidence_a.get("metrics", {})
+        if not isinstance(metrics_a, dict):
+            metrics_a = {}
+        metrics_b = evidence_b.get("metrics", {})
+        if not isinstance(metrics_b, dict):
+            metrics_b = {}
+
+        metric_diff: dict[str, dict[str, Any]] = {}
+        all_metric_keys = sorted(set(metrics_a.keys()) | set(metrics_b.keys()))
+        for key in all_metric_keys:
+            a_val = metrics_a.get(key)
+            b_val = metrics_b.get(key)
+            delta: float | None = None
+            if isinstance(a_val, (int, float)) and isinstance(b_val, (int, float)):
+                delta = float(b_val) - float(a_val)
+            metric_diff[str(key)] = {
+                "run_a": a_val,
+                "run_b": b_val,
+                "delta": round(delta, 6) if delta is not None else None,
+                "changed": a_val != b_val,
+            }
+
+        artifacts_a = evidence_a.get("artifacts", [])
+        artifacts_b = evidence_b.get("artifacts", [])
+        if not isinstance(artifacts_a, list):
+            artifacts_a = []
+        if not isinstance(artifacts_b, list):
+            artifacts_b = []
+        by_path_a = {
+            _normalize_artifact_path(str(item.get("path", "")), run_a): str(item.get("sha256", ""))
+            for item in artifacts_a
+            if isinstance(item, dict) and str(item.get("path", ""))
+        }
+        by_path_b = {
+            _normalize_artifact_path(str(item.get("path", "")), run_b): str(item.get("sha256", ""))
+            for item in artifacts_b
+            if isinstance(item, dict) and str(item.get("path", ""))
+        }
+        all_artifact_paths = sorted(set(by_path_a.keys()) | set(by_path_b.keys()))
+        artifacts_only_in_a: list[str] = []
+        artifacts_only_in_b: list[str] = []
+        artifacts_changed: list[dict[str, str]] = []
+        for artifact_path in all_artifact_paths:
+            sha_a = by_path_a.get(artifact_path)
+            sha_b = by_path_b.get(artifact_path)
+            if sha_a and not sha_b:
+                artifacts_only_in_a.append(artifact_path)
+            elif sha_b and not sha_a:
+                artifacts_only_in_b.append(artifact_path)
+            elif sha_a != sha_b:
+                artifacts_changed.append(
+                    {
+                        "path": artifact_path,
+                        "sha_a": sha_a or "",
+                        "sha_b": sha_b or "",
+                    }
+                )
+
+        hash_fields = ["input_hash", "params_hash", "code_hash", "env_hash"]
+        hash_comparison = {
+            field: {
+                "run_a": evidence_a.get(field),
+                "run_b": evidence_b.get(field),
+                "equal": evidence_a.get(field) == evidence_b.get(field),
+            }
+            for field in hash_fields
+        }
+
+        return {
+            "status": "ok",
+            "run_a": run_a,
+            "run_b": run_b,
+            "meta": {
+                "run_a": meta_a,
+                "run_b": meta_b,
+            },
+            "status_comparison": {
+                "run_a": evidence_a.get("status"),
+                "run_b": evidence_b.get("status"),
+                "equal": evidence_a.get("status") == evidence_b.get("status"),
+            },
+            "hash_comparison": hash_comparison,
+            "metric_diff": metric_diff,
+            "artifact_diff": {
+                "only_in_run_a": artifacts_only_in_a,
+                "only_in_run_b": artifacts_only_in_b,
+                "changed_sha": artifacts_changed,
+            },
+        }
+
     def memory_query(
         self,
         *,
@@ -1000,3 +1106,11 @@ def _parse_iso_utc(value: str) -> datetime | None:
     if out.tzinfo is None:
         return out.replace(tzinfo=timezone.utc)
     return out
+
+
+def _normalize_artifact_path(path: str, run_id: str) -> str:
+    marker = f"data/runs/{run_id}/"
+    norm = path.replace("\\", "/")
+    if norm.startswith(marker):
+        return norm[len(marker) :]
+    return norm

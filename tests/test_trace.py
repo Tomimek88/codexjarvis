@@ -58,6 +58,45 @@ class TraceTests(unittest.TestCase):
             self.assertGreaterEqual(inspect["trace_overview"]["total_span_sec"], 0.0)
             self.assertEqual(inspect["execution_overview"]["final_status"], "SUCCESS")
 
+    def test_compare_runs_reports_metric_and_hash_differences(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            engine = JarvisEngine(root)
+
+            task_a = {
+                "task_id": "task-compare-0001a",
+                "objective": "compare run a",
+                "domain": "generic",
+                "requires_computation": True,
+                "allow_internet_research": True,
+                "strict_no_guessing": True,
+                "force_rerun": True,
+                "parameters": {"a": 1, "b": 2, "c": 3, "seed": 42},
+            }
+            task_b = {
+                "task_id": "task-compare-0001b",
+                "objective": "compare run b",
+                "domain": "generic",
+                "requires_computation": True,
+                "allow_internet_research": True,
+                "strict_no_guessing": True,
+                "force_rerun": True,
+                "parameters": {"a": 2, "b": 4, "c": 8, "seed": 42},
+            }
+
+            out_a = engine.run(task_a, dry_run=False)
+            out_b = engine.run(task_b, dry_run=False)
+            cmp = engine.compare_runs(out_a["run_id"], out_b["run_id"])
+
+            self.assertEqual(cmp["status"], "ok")
+            self.assertFalse(cmp["hash_comparison"]["params_hash"]["equal"])
+            self.assertTrue(cmp["hash_comparison"]["code_hash"]["equal"])
+            self.assertIn("weighted_sum", cmp["metric_diff"])
+            self.assertTrue(cmp["metric_diff"]["weighted_sum"]["changed"])
+            self.assertEqual(cmp["artifact_diff"]["only_in_run_a"], [])
+            self.assertEqual(cmp["artifact_diff"]["only_in_run_b"], [])
+            self.assertTrue(any(item["path"] == "results/result.json" for item in cmp["artifact_diff"]["changed_sha"]))
+
 
 if __name__ == "__main__":
     unittest.main()
