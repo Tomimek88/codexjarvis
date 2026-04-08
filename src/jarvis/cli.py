@@ -88,6 +88,19 @@ def build_parser() -> argparse.ArgumentParser:
     runs_stats_parser.add_argument("--limit", type=int, default=0)
     runs_stats_parser.add_argument("--domain", type=str, required=False)
 
+    cache_verify_parser = subparsers.add_parser(
+        "cache-verify",
+        help="Verify cache index entries against run metadata.",
+    )
+    cache_verify_parser.add_argument("--limit", type=int, default=0)
+
+    cache_rebuild_parser = subparsers.add_parser(
+        "cache-rebuild",
+        help="Rebuild cache index from existing run metadata.",
+    )
+    cache_rebuild_parser.add_argument("--limit", type=int, default=0)
+    cache_rebuild_parser.add_argument("--include-failed", action="store_true")
+
     mem_query_parser = subparsers.add_parser(
         "memory-query",
         help="Query indexed run metadata from SQLite memory store.",
@@ -223,6 +236,10 @@ def main(argv: list[str] | None = None) -> int:
             )
         elif args.command == "runs-stats":
             payload = engine.runs_stats(limit=args.limit, domain=args.domain)
+        elif args.command == "cache-verify":
+            payload = engine.cache_verify(limit=args.limit)
+        elif args.command == "cache-rebuild":
+            payload = engine.cache_rebuild(limit=args.limit, include_failed=bool(args.include_failed))
         elif args.command == "memory-query":
             payload = engine.memory_query(
                 limit=args.limit,

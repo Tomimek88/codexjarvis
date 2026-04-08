@@ -1014,6 +1014,192 @@ class JarvisEngine:
             },
         }
 
+    def cache_verify(self, *, limit: int = 0) -> dict[str, Any]:
+        self.store.ensure_layout()
+        index = self.store.load_cache_index()
+        entries = index.get("entries", {})
+        if not isinstance(entries, dict):
+            return {
+                "status": "ok",
+                "valid_count": 0,
+                "invalid_count": 1,
+                "issue_count": 1,
+                "issues": [
+                    {
+                        "code": "invalid_cache_index",
+                        "message": "cache_index.entries is not an object",
+                    }
+                ],
+            }
+
+        items = list(entries.items())
+        if limit > 0:
+            items = items[: max(1, min(int(limit), 50000))]
+
+        valid_count = 0
+        invalid_count = 0
+        issues: list[dict[str, Any]] = []
+
+        for cache_key, payload in items:
+            if not isinstance(cache_key, str) or len(cache_key.strip()) == 0:
+                invalid_count += 1
+                issues.append(
+                    {
+                        "code": "invalid_cache_key",
+                        "cache_key": str(cache_key),
+                        "message": "Cache key is missing or not a valid string.",
+                    }
+                )
+                continue
+
+            if not isinstance(payload, dict):
+                invalid_count += 1
+                issues.append(
+                    {
+                        "code": "invalid_cache_entry_payload",
+                        "cache_key": cache_key,
+                        "message": "Cache entry payload is not an object.",
+                    }
+                )
+                continue
+
+            run_id = payload.get("run_id")
+            if not isinstance(run_id, str) or len(run_id.strip()) == 0:
+                invalid_count += 1
+                issues.append(
+                    {
+                        "code": "missing_run_id",
+                        "cache_key": cache_key,
+                        "message": "Cache entry has missing or invalid run_id.",
+                    }
+                )
+                continue
+
+            run_dir = self.store.run_path(run_id)
+            if not run_dir.exists():
+                invalid_count += 1
+                issues.append(
+                    {
+                        "code": "missing_run_dir",
+                        "cache_key": cache_key,
+                        "run_id": run_id,
+                        "message": "Referenced run directory does not exist.",
+                    }
+                )
+                continue
+
+            meta_path = run_dir / "meta.json"
+            if not meta_path.exists():
+                invalid_count += 1
+                issues.append(
+                    {
+                        "code": "missing_meta",
+                        "cache_key": cache_key,
+                        "run_id": run_id,
+                        "message": "Referenced run has no meta.json.",
+                    }
+                )
+                continue
+
+            try:
+                meta = load_json_file(meta_path)
+            except Exception as exc:
+                invalid_count += 1
+                issues.append(
+                    {
+                        "code": "meta_load_failed",
+                        "cache_key": cache_key,
+                        "run_id": run_id,
+                        "message": f"{type(exc).__name__}: {exc}",
+                    }
+                )
+                continue
+
+            meta_cache_key = str(meta.get("cache_key", ""))
+            if meta_cache_key != cache_key:
+                invalid_count += 1
+                issues.append(
+                    {
+                        "code": "cache_key_mismatch",
+                        "cache_key": cache_key,
+                        "run_id": run_id,
+                        "meta_cache_key": meta_cache_key,
+                        "message": "Cache entry key differs from run meta cache_key.",
+                    }
+                )
+                continue
+
+            valid_count += 1
+
+        return {
+            "status": "ok",
+            "scanned_count": len(items),
+            "valid_count": valid_count,
+            "invalid_count": invalid_count,
+            "issue_count": len(issues),
+            "issues": issues[:200],
+        }
+
+    def cache_rebuild(
+        self,
+        *,
+        limit: int = 0,
+        include_failed: bool = False,
+    ) -> dict[str, Any]:
+        self.store.ensure_layout()
+        run_dirs = [path for path in self.store.runs_dir.iterdir() if path.is_dir()]
+        run_dirs = sorted(run_dirs, key=lambda path: path.name, reverse=True)
+        if limit > 0:
+            run_dirs = run_dirs[: max(1, min(int(limit), 50000))]
+
+        entries: dict[str, dict[str, str]] = {}
+        processed = 0
+        skipped = 0
+        duplicates = 0
+        for run_dir in run_dirs:
+            meta_path = run_dir / "meta.json"
+            evidence_path = run_dir / "evidence_bundle.json"
+            if not meta_path.exists() or not evidence_path.exists():
+                skipped += 1
+                continue
+
+            try:
+                meta = load_json_file(meta_path)
+                evidence = load_json_file(evidence_path)
+            except Exception:
+                skipped += 1
+                continue
+
+            run_status = str(evidence.get("status", meta.get("status", ""))).upper()
+            if not include_failed and run_status != "SUCCESS":
+                skipped += 1
+                continue
+
+            cache_key = str(meta.get("cache_key", "")).strip()
+            run_id = str(meta.get("run_id", run_dir.name)).strip()
+            if not cache_key or not run_id:
+                skipped += 1
+                continue
+
+            processed += 1
+            if cache_key in entries:
+                duplicates += 1
+            entries[cache_key] = {
+                "run_id": run_id,
+                "updated_at_utc": datetime.now(timezone.utc).isoformat(),
+            }
+
+        payload = {"entries": entries}
+        self.store.save_cache_index(payload)
+        return {
+            "status": "ok",
+            "scanned_runs": len(run_dirs),
+            "processed_runs": processed,
+            "skipped_runs": skipped,
+            "duplicate_cache_keys": duplicates,
+            "rebuilt_entry_count": len(entries),
+        }
+
     def memory_query(
         self,
         *,
