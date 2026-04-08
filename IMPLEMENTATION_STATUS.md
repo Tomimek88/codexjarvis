@@ -27,6 +27,8 @@
   - Research Layer v1: source collection + hashed source snapshots + per-run manifest
   - Structured source extraction: JSON pretty-print + CSV/TSV tabular preview
   - Source provenance metadata (filesystem/http retrieval details) in research manifest
+  - Research ref expansion for directories and glob patterns
+  - Research source deduplication (SHA-based) for repeated refs
   - Execution policy v1: timeout + retry control with execution manifest
   - Run trace v1: per-stage timeline persisted per run
   - Queue runner v1: submit/list/get/work with retry-at-queue-level

@@ -32,6 +32,7 @@ class ResearchTests(unittest.TestCase):
             )
 
             self.assertEqual(bundle["source_count"], 1)
+            self.assertEqual(bundle["deduplicated_count"], 0)
             self.assertEqual(len(bundle["errors"]), 0)
             self.assertIn("research/sources_manifest.json", extra_json)
             self.assertIn("research/src_001.txt", extra_text)
@@ -64,6 +65,7 @@ class ResearchTests(unittest.TestCase):
             )
 
             self.assertEqual(bundle["source_count"], 2)
+            self.assertEqual(bundle["deduplicated_count"], 0)
             modes = [item["extraction_mode"] for item in bundle["sources"]]
             self.assertIn("json_pretty", modes)
             self.assertIn("tabular_preview", modes)
@@ -72,6 +74,45 @@ class ResearchTests(unittest.TestCase):
             for item in bundle["sources"]:
                 self.assertTrue(isinstance(item.get("provenance", {}), dict))
                 self.assertTrue(bool(item["provenance"].get("fetched_at_utc", "")))
+
+    def test_collect_directory_and_glob_refs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            docs = root / "docs"
+            docs.mkdir(parents=True, exist_ok=True)
+            (docs / "a.txt").write_text("A", encoding="utf-8")
+            (docs / "b.md").write_text("B", encoding="utf-8")
+            (docs / "c.json").write_text('{"c": 1}', encoding="utf-8")
+
+            task = {
+                "task_id": "task-r-0001c",
+                "objective": "collect directory and glob refs",
+                "domain": "generic",
+                "requires_computation": True,
+                "allow_internet_research": True,
+                "strict_no_guessing": True,
+                "parameters": {
+                    "research_refs": [
+                        "docs",
+                        "glob://docs/*.md",
+                    ],
+                    "research_max_files": 10,
+                },
+            }
+            bundle, _, extra_text, _ = collect_research_artifacts(
+                task=task,
+                project_root=root,
+                run_id="run_struct_002",
+            )
+
+            self.assertGreaterEqual(bundle["source_count"], 3)
+            self.assertGreaterEqual(bundle["deduplicated_count"], 1)
+            uris = [item["uri"] for item in bundle["sources"]]
+            self.assertIn("docs/a.txt", uris)
+            self.assertIn("docs/b.md", uris)
+            self.assertIn("docs/c.json", uris)
+            self.assertTrue(any(text.strip() == "B" for text in extra_text.values()))
+            self.assertTrue(any(item["status"] == "DUPLICATE" for item in bundle["sources"]))
 
     def test_orchestrator_persists_research_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

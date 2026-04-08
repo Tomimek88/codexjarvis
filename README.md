@@ -188,12 +188,17 @@ jarvis --root <project_root> queue-work [--max-jobs 10] [--worker-id worker-1]
 ## Research Layer (Current)
 
 - Add `parameters.research_refs` in task JSON (local paths, `local://...`, or URLs).
+- `research_refs` also supports:
+  - directory paths (auto-expands files, controlled by `research_max_files`)
+  - glob patterns via `glob://pattern` or object form `{ "uri": "<base>", "glob": "<pattern>" }`
 - Research artifacts are hash-tracked and attached to the run evidence.
 - Structured local sources are normalized for reasoning:
   - `.json` -> pretty JSON text
   - `.csv` / `.tsv` -> tabular preview (header + sample rows)
 - Every source manifest entry now includes `provenance` metadata
   (`retrieval_method`, resolved path or final URL, timestamps, size/status where available).
+- Duplicate source payloads are auto-deduplicated by SHA (`status: DUPLICATE`,
+  `duplicate_of_source_id`, and `deduplicated_count` in manifest).
 - URL fetch is best-effort and may fail if network is unavailable; failures are recorded in research manifest.
 
 ## Execution + Trace (Current)
