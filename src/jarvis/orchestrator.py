@@ -2129,20 +2129,30 @@ class JarvisEngine:
             }
 
     def queue_work(self, *, max_jobs: int = 10, worker_id: str | None = None) -> dict[str, Any]:
-        max_jobs = max(1, min(int(max_jobs), 100))
+        requested_max_jobs = int(max_jobs)
+        unlimited_mode = requested_max_jobs <= 0
+        safe_max_jobs = 10000 if unlimited_mode else max(1, min(requested_max_jobs, 100))
         wid = worker_id or f"worker_{uuid4().hex[:8]}"
         processed = 0
         outputs: list[dict[str, Any]] = []
-        while processed < max_jobs:
+        stop_reason = "max_jobs_limit"
+        while processed < safe_max_jobs:
             out = self.queue_work_once(worker_id=wid)
             outputs.append(out)
             if out.get("status") == "idle":
+                stop_reason = "idle"
                 break
             processed += 1
+        if stop_reason != "idle" and unlimited_mode:
+            stop_reason = "safety_limit"
         return {
             "status": "ok",
             "worker_id": wid,
+            "requested_max_jobs": requested_max_jobs,
+            "effective_max_jobs": safe_max_jobs,
+            "unlimited_mode": unlimited_mode,
             "processed": processed,
+            "stop_reason": stop_reason,
             "results": outputs,
         }
 

@@ -52,6 +52,7 @@
   - Queue recovery command: `queue-requeue-failed`
   - Queue stale-running recovery command: `queue-recover-running`
   - Queue cancellation command: `queue-cancel`
+  - Queue worker unlimited drain mode: `queue-work --max-jobs 0`
 
 ## Current known external blockers on this PC
 

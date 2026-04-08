@@ -180,6 +180,8 @@ jarvis --root <project_root> queue-work-once [--worker-id worker-1]
 jarvis --root <project_root> queue-work [--max-jobs 10] [--worker-id worker-1]
 ```
 
+Tip: `queue-work --max-jobs 0` processes jobs until queue becomes idle (bounded by internal safety cap).
+
 ## Memory Layer (Current)
 
 - Every successful real run is automatically indexed into `data/memory/memory.db`.

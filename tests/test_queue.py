@@ -230,6 +230,25 @@ class QueueTests(unittest.TestCase):
             fetched = engine.queue_get(job_id)
             self.assertEqual(fetched["job"]["status"], "FAILED")
 
+    def test_queue_work_zero_max_jobs_processes_until_idle(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            engine = JarvisEngine(root)
+            engine.queue_submit(_base_task("task-q-0010"), dry_run=False, max_attempts=1)
+            engine.queue_submit(_base_task("task-q-0011"), dry_run=False, max_attempts=1)
+
+            out = engine.queue_work(max_jobs=0, worker_id="worker-unlimited")
+            self.assertEqual(out["status"], "ok")
+            self.assertTrue(bool(out["unlimited_mode"]))
+            self.assertEqual(out["requested_max_jobs"], 0)
+            self.assertEqual(out["stop_reason"], "idle")
+            self.assertGreaterEqual(int(out["processed"]), 2)
+
+            stats = engine.queue_stats()
+            counts = stats["stats"]["status_counts"]
+            self.assertEqual(counts.get("QUEUED", 0), 0)
+            self.assertEqual(counts.get("SUCCESS", 0), 2)
+
 
 if __name__ == "__main__":
     unittest.main()

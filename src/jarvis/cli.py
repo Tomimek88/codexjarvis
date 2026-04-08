@@ -288,7 +288,12 @@ def build_parser() -> argparse.ArgumentParser:
         "queue-work",
         help="Process queued jobs in a loop.",
     )
-    queue_work_parser.add_argument("--max-jobs", type=int, default=10)
+    queue_work_parser.add_argument(
+        "--max-jobs",
+        type=int,
+        default=10,
+        help="Max processed jobs in this call. Use 0 to process until idle (with internal safety cap).",
+    )
     queue_work_parser.add_argument("--worker-id", type=str, required=False)
     return parser
 
