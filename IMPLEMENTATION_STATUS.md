@@ -10,6 +10,7 @@
   - reproducible Python project structure
   - local run storage (`data/runs`, `data/cache`, `data/memory`)
   - SQLite memory DB (`data/memory/memory.db`) with run + artifact index
+  - memory memo search (`memory-search`) over indexed runs
   - health checks (`jarvis health`)
   - one-command bootstrap scripts (`scripts/bootstrap.ps1`, `scripts/bootstrap.sh`)
   - smoke scripts (`scripts/smoke.ps1`, `scripts/smoke.sh`)

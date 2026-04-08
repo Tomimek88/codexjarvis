@@ -49,6 +49,15 @@ def build_parser() -> argparse.ArgumentParser:
     mem_query_parser.add_argument("--status", type=str, required=False)
     mem_query_parser.add_argument("--contains", type=str, required=False)
 
+    mem_search_parser = subparsers.add_parser(
+        "memory-search",
+        help="Search run memos and objectives with token-based ranking.",
+    )
+    mem_search_parser.add_argument("--query", type=str, required=True)
+    mem_search_parser.add_argument("--limit", type=int, default=10)
+    mem_search_parser.add_argument("--domain", type=str, required=False)
+    mem_search_parser.add_argument("--status", type=str, required=False)
+
     mem_get_parser = subparsers.add_parser(
         "memory-get",
         help="Get one indexed run and its artifacts from SQLite memory store.",
@@ -119,6 +128,13 @@ def main(argv: list[str] | None = None) -> int:
                 domain=args.domain,
                 status=args.status,
                 contains=args.contains,
+            )
+        elif args.command == "memory-search":
+            payload = engine.memory_search(
+                query=args.query,
+                limit=args.limit,
+                domain=args.domain,
+                status=args.status,
             )
         elif args.command == "memory-get":
             payload = engine.memory_get(args.run_id)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from pathlib import Path
 from typing import Any
@@ -48,8 +49,14 @@ class MemoryStore:
                   kind TEXT NOT NULL,
                   FOREIGN KEY(run_id) REFERENCES runs(run_id) ON DELETE CASCADE
                 );
-
                 CREATE INDEX IF NOT EXISTS idx_artifacts_run_id ON artifacts(run_id);
+
+                CREATE TABLE IF NOT EXISTS run_memos(
+                  run_id TEXT PRIMARY KEY,
+                  memo_text TEXT NOT NULL,
+                  updated_at_utc TEXT NOT NULL,
+                  FOREIGN KEY(run_id) REFERENCES runs(run_id) ON DELETE CASCADE
+                );
                 """
             )
             con.commit()
@@ -75,10 +82,18 @@ class MemoryStore:
         evidence_path: str,
         metrics: dict[str, Any],
         artifacts: list[dict[str, str]],
+        memo_text: str | None = None,
     ) -> None:
         self.ensure_schema()
         seed_text = str(seed) if seed is not None else ""
         metrics_json = json.dumps(metrics, sort_keys=True, ensure_ascii=True)
+        effective_memo = (memo_text or "").strip()
+        if not effective_memo:
+            metric_bits = ", ".join(f"{k}={metrics[k]}" for k in sorted(metrics.keys()))
+            effective_memo = (
+                f"task_id={task_id}; domain={domain}; objective={objective}; "
+                f"status={status}; metrics={metric_bits}"
+            ).strip()
 
         con = self._connect()
         try:
@@ -123,6 +138,7 @@ class MemoryStore:
                     metrics_json,
                 ),
             )
+
             con.execute("DELETE FROM artifacts WHERE run_id = ?", (run_id,))
             con.executemany(
                 """
@@ -138,6 +154,17 @@ class MemoryStore:
                     )
                     for artifact in artifacts
                 ],
+            )
+
+            con.execute(
+                """
+                INSERT INTO run_memos(run_id, memo_text, updated_at_utc)
+                VALUES (?, ?, datetime('now'))
+                ON CONFLICT(run_id) DO UPDATE SET
+                  memo_text=excluded.memo_text,
+                  updated_at_utc=excluded.updated_at_utc
+                """,
+                (run_id, effective_memo),
             )
             con.commit()
         finally:
@@ -167,10 +194,16 @@ class MemoryStore:
             params.extend([like, like])
 
         where_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        if where_sql:
+            where_sql = where_sql.replace("domain = ?", "r.domain = ?").replace("status = ?", "r.status = ?")
+            where_sql = where_sql.replace("objective LIKE ?", "r.objective LIKE ?")
+            where_sql = where_sql.replace("task_id LIKE ?", "r.task_id LIKE ?")
         sql = (
-            "SELECT run_id, task_id, domain, objective, cache_key, timestamp_utc, status, "
-            "input_hash, params_hash, code_hash, env_hash, seed, summary_path, evidence_path, metrics_json "
-            f"FROM runs {where_sql} ORDER BY timestamp_utc DESC LIMIT ?"
+            "SELECT r.run_id, r.task_id, r.domain, r.objective, r.cache_key, r.timestamp_utc, r.status, "
+            "r.input_hash, r.params_hash, r.code_hash, r.env_hash, r.seed, r.summary_path, r.evidence_path, "
+            "r.metrics_json, COALESCE(m.memo_text, '') AS memo_text "
+            "FROM runs r LEFT JOIN run_memos m ON m.run_id = r.run_id "
+            f"{where_sql} ORDER BY r.timestamp_utc DESC LIMIT ?"
         )
         params.append(max(1, min(limit, 100)))
 
@@ -184,8 +217,81 @@ class MemoryStore:
         for row in rows:
             record = dict(row)
             record["metrics"] = json.loads(record.pop("metrics_json"))
+            record["memo_text"] = str(record.pop("memo_text", ""))
             output.append(record)
         return output
+
+    def search_runs(
+        self,
+        *,
+        query: str,
+        limit: int = 10,
+        domain: str | None = None,
+        status: str | None = None,
+    ) -> list[dict[str, Any]]:
+        self.ensure_schema()
+        text = query.strip().lower()
+        tokens = _tokenize(text)
+        if len(tokens) == 0:
+            return []
+
+        clauses: list[str] = []
+        params: list[Any] = []
+        if domain:
+            clauses.append("r.domain = ?")
+            params.append(domain)
+        if status:
+            clauses.append("r.status = ?")
+            params.append(status)
+        where_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+
+        sql = f"""
+            SELECT r.run_id, r.task_id, r.domain, r.objective, r.cache_key, r.timestamp_utc, r.status,
+                   r.input_hash, r.params_hash, r.code_hash, r.env_hash, r.seed,
+                   r.summary_path, r.evidence_path, r.metrics_json,
+                   COALESCE(m.memo_text, '') AS memo_text
+            FROM runs r
+            LEFT JOIN run_memos m ON m.run_id = r.run_id
+            {where_sql}
+            ORDER BY r.timestamp_utc DESC
+            LIMIT 500
+        """
+
+        con = self._connect()
+        try:
+            rows = con.execute(sql, params).fetchall()
+        finally:
+            con.close()
+
+        phrase = " ".join(tokens)
+        scored: list[dict[str, Any]] = []
+        for row in rows:
+            rec = dict(row)
+            haystack = " ".join(
+                [
+                    rec.get("objective", ""),
+                    rec.get("task_id", ""),
+                    rec.get("domain", ""),
+                    rec.get("memo_text", ""),
+                ]
+            ).lower()
+            score = 0.0
+            for token in tokens:
+                score += haystack.count(token)
+            if phrase and phrase in haystack:
+                score += 2.0
+            if score <= 0:
+                continue
+
+            metrics = json.loads(rec.pop("metrics_json"))
+            memo = rec.pop("memo_text")
+            rec["metrics"] = metrics
+            rec["memo_preview"] = memo[:400]
+            rec["score"] = round(score, 6)
+            scored.append(rec)
+
+        scored = sorted(scored, key=lambda item: (-item["score"], item["timestamp_utc"]))
+        return scored[: max(1, min(limit, 100))]
 
     def get_run(self, run_id: str) -> dict[str, Any] | None:
         self.ensure_schema()
@@ -218,10 +324,28 @@ class MemoryStore:
         record = dict(row)
         record["metrics"] = json.loads(record.pop("metrics_json"))
         record["artifacts"] = [dict(item) for item in artifacts]
+        record["memo_text"] = self._get_memo_text(run_id)
         return record
+
+    def _get_memo_text(self, run_id: str) -> str:
+        con = self._connect()
+        try:
+            row = con.execute(
+                "SELECT memo_text FROM run_memos WHERE run_id = ?",
+                (run_id,),
+            ).fetchone()
+        finally:
+            con.close()
+        if row is None:
+            return ""
+        return str(row["memo_text"])
 
     def _connect(self) -> sqlite3.Connection:
         con = sqlite3.connect(self.db_path)
         con.row_factory = sqlite3.Row
         con.execute("PRAGMA foreign_keys = ON")
         return con
+
+
+def _tokenize(text: str) -> list[str]:
+    return [token for token in re.findall(r"[a-z0-9_]+", text.lower()) if len(token) >= 2]

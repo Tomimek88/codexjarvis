@@ -406,6 +406,12 @@ class JarvisEngine:
                 evidence_path=f"data/runs/{run_id}/evidence_bundle.json",
                 metrics=final_bundle.get("metrics", {}),
                 artifacts=final_bundle["artifacts"],
+                memo_text=self._compose_memo(
+                    task=task,
+                    summary_payload=summary_payload,
+                    evidence_bundle=final_bundle,
+                    research_bundle=research_bundle,
+                ),
             )
 
         if blocked_by_truth_layer:
@@ -475,6 +481,22 @@ class JarvisEngine:
             raise ValidationError(f"Run '{run_id}' not found in memory DB.")
         return {"status": "ok", "run": run}
 
+    def memory_search(
+        self,
+        *,
+        query: str,
+        limit: int = 10,
+        domain: str | None = None,
+        status: str | None = None,
+    ) -> dict[str, Any]:
+        rows = self.memory.search_runs(
+            query=query,
+            limit=limit,
+            domain=domain,
+            status=status,
+        )
+        return {"status": "ok", "count": len(rows), "results": rows}
+
     def index_run(self, run_id: str) -> dict[str, Any]:
         run_dir = self.store.run_path(run_id)
         if not run_dir.exists():
@@ -501,6 +523,16 @@ class JarvisEngine:
             evidence_path=f"data/runs/{run_id}/evidence_bundle.json",
             metrics=evidence.get("metrics", {}),
             artifacts=evidence["artifacts"],
+            memo_text=self._compose_memo(
+                task={
+                    "task_id": meta.get("task_id", ""),
+                    "objective": meta.get("objective", ""),
+                    "domain": meta.get("domain", evidence["domain"]),
+                },
+                summary_payload=self._load_run_summary(run_id),
+                evidence_bundle=evidence,
+                research_bundle=self._load_run_research_bundle(run_id),
+            ),
         )
         return {"status": "ok", "run_id": run_id, "indexed": True}
 
@@ -637,6 +669,12 @@ class JarvisEngine:
             return {"run_id": run_id, "run_mode": "unknown", "events": []}
         return load_json_file(path)
 
+    def _load_run_summary(self, run_id: str) -> dict[str, Any]:
+        path = self.store.run_path(run_id) / "summary.json"
+        if not path.exists():
+            return {"headline": "", "key_metrics": {}, "caveats": []}
+        return load_json_file(path)
+
     @staticmethod
     def _trace_event(trace: dict[str, Any], stage: str, details: dict[str, Any] | None = None) -> None:
         trace.setdefault("events", []).append(
@@ -658,6 +696,46 @@ class JarvisEngine:
                     return err
         err_fallback = str(result.get("error", "")).strip()
         return err_fallback or "Run failed."
+
+    @staticmethod
+    def _compose_memo(
+        *,
+        task: dict[str, Any],
+        summary_payload: dict[str, Any],
+        evidence_bundle: dict[str, Any],
+        research_bundle: dict[str, Any],
+    ) -> str:
+        task_id = str(task.get("task_id", ""))
+        domain = str(task.get("domain", ""))
+        objective = str(task.get("objective", ""))
+        headline = str(summary_payload.get("headline", ""))
+
+        key_metrics = summary_payload.get("key_metrics", {})
+        if not isinstance(key_metrics, dict):
+            key_metrics = {}
+        metrics = evidence_bundle.get("metrics", {})
+        if not isinstance(metrics, dict):
+            metrics = {}
+        caveats = summary_payload.get("caveats", [])
+        if not isinstance(caveats, list):
+            caveats = []
+
+        metric_pairs = ", ".join(f"{k}={metrics[k]}" for k in sorted(metrics.keys()))
+        key_metric_pairs = ", ".join(f"{k}={key_metrics[k]}" for k in sorted(key_metrics.keys()))
+        caveat_text = " | ".join(str(item) for item in caveats if isinstance(item, str))
+        source_count = int(research_bundle.get("source_count", 0))
+
+        parts = [
+            f"task_id={task_id}",
+            f"domain={domain}",
+            f"objective={objective}",
+            f"headline={headline}",
+            f"metrics={metric_pairs}",
+            f"key_metrics={key_metric_pairs}",
+            f"research_sources={source_count}",
+            f"caveats={caveat_text}",
+        ]
+        return "; ".join(part for part in parts if part)
 
 
 def _is_writable(path: Path) -> bool:
