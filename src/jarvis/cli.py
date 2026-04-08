@@ -206,6 +206,15 @@ def build_parser() -> argparse.ArgumentParser:
     runs_stats_parser.add_argument("--limit", type=int, default=0)
     runs_stats_parser.add_argument("--domain", type=str, required=False)
 
+    runs_dashboard_parser = subparsers.add_parser(
+        "runs-dashboard",
+        help="Generate static HTML dashboard for recent runs.",
+    )
+    runs_dashboard_parser.add_argument("--limit", type=int, default=100)
+    runs_dashboard_parser.add_argument("--domain", type=str, required=False)
+    runs_dashboard_parser.add_argument("--success-only", action="store_true")
+    runs_dashboard_parser.add_argument("--output-file", type=Path, required=False)
+
     runs_migrate_parser = subparsers.add_parser(
         "runs-migrate-legacy",
         help="Backfill missing legacy run files (execution_manifest/trace).",
@@ -520,6 +529,13 @@ def main(argv: list[str] | None = None) -> int:
             )
         elif args.command == "runs-stats":
             payload = engine.runs_stats(limit=args.limit, domain=args.domain)
+        elif args.command == "runs-dashboard":
+            payload = engine.runs_dashboard(
+                limit=args.limit,
+                domain=args.domain,
+                include_failed=not bool(args.success_only),
+                output_file=args.output_file.resolve() if args.output_file else None,
+            )
         elif args.command == "runs-migrate-legacy":
             payload = engine.runs_migrate_legacy(
                 limit=args.limit,

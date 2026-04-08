@@ -160,6 +160,7 @@ jarvis --root <project_root> audit-run --run-id <run_id>
 jarvis --root <project_root> audit-all [--limit 50] [--include-passed]
 jarvis --root <project_root> runs-list [--limit 20] [--status SUCCESS] [--domain generic] [--contains text]
 jarvis --root <project_root> runs-stats [--limit 0] [--domain generic]
+jarvis --root <project_root> runs-dashboard [--limit 100] [--domain generic] [--success-only] [--output-file <path.html>]
 jarvis --root <project_root> runs-migrate-legacy [--limit 0] [--skip-execution-manifest] [--skip-trace]
 jarvis --root <project_root> cache-verify [--limit 0]
 jarvis --root <project_root> cache-rebuild [--limit 0] [--include-failed]
@@ -281,6 +282,7 @@ Tip: run `memory-clean --dry-run` to preview stale memory-index cleanup.
 - `runs-list` reads `data/runs/*` directly and returns recent run metadata.
 - Supports filtering by `status`, `domain`, and free-text `contains`.
 - `runs-stats` returns aggregate counts by status/domain and success rate.
+- `runs-dashboard` exports a static HTML summary for quick local operator review.
 - `runs-migrate-legacy` backfills missing `execution_manifest.json` and `trace.json` for older runs.
 
 ## Cache Ops (Current)

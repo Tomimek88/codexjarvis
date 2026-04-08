@@ -6,6 +6,7 @@ import shutil
 import time
 import zipfile
 from datetime import datetime, timezone
+from html import escape
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -879,6 +880,60 @@ class JarvisEngine:
             "run_id": run_id,
             "report_json_path": str(json_path.relative_to(self.project_root).as_posix()),
             "report_md_path": str(md_path.relative_to(self.project_root).as_posix()),
+        }
+
+    def runs_dashboard(
+        self,
+        *,
+        limit: int = 100,
+        domain: str | None = None,
+        include_failed: bool = True,
+        output_file: Path | None = None,
+    ) -> dict[str, Any]:
+        self.store.ensure_layout()
+        safe_limit = max(1, min(int(limit), 2000))
+        status_filter = None if include_failed else "SUCCESS"
+
+        listed = self.runs_list(limit=safe_limit, status=status_filter, domain=domain, contains=None)
+        rows = listed.get("runs", [])
+        if not isinstance(rows, list):
+            rows = []
+        stats = self.runs_stats(limit=safe_limit, domain=domain)
+        generated_at = datetime.now(timezone.utc).isoformat()
+
+        root_resolved = self.project_root.resolve()
+        if output_file is not None:
+            dashboard_path = output_file.resolve()
+            if not _is_within_root(dashboard_path, root_resolved):
+                raise ValidationError("output_file must be within project root.")
+        else:
+            stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+            dashboard_path = (self.project_root / "data" / "reports" / f"runs_dashboard_{stamp}.html").resolve()
+        dashboard_path.parent.mkdir(parents=True, exist_ok=True)
+
+        html = self._build_runs_dashboard_html(
+            generated_at_utc=generated_at,
+            rows=rows,
+            stats=stats,
+            scope={
+                "limit": safe_limit,
+                "domain": (domain or "").strip().lower(),
+                "include_failed": bool(include_failed),
+            },
+        )
+        with dashboard_path.open("w", encoding="utf-8", newline="\n") as f:
+            f.write(html)
+
+        return {
+            "status": "ok",
+            "generated_at_utc": generated_at,
+            "dashboard_path": _as_project_relative(dashboard_path, self.project_root),
+            "run_count": len(rows),
+            "scope": {
+                "limit": safe_limit,
+                "domain": (domain or "").strip().lower(),
+                "include_failed": bool(include_failed),
+            },
         }
 
     def audit_run(self, run_id: str) -> dict[str, Any]:
@@ -2675,6 +2730,147 @@ class JarvisEngine:
         lines.append(f"- blocked_user_claims: {truth_overview.get('blocked_user_claims', False)}")
         lines.append("")
         return "\n".join(lines)
+
+    @staticmethod
+    def _build_runs_dashboard_html(
+        *,
+        generated_at_utc: str,
+        rows: list[dict[str, Any]],
+        stats: dict[str, Any],
+        scope: dict[str, Any],
+    ) -> str:
+        status_counts = stats.get("counts_by_status", {})
+        if not isinstance(status_counts, dict):
+            status_counts = {}
+        domain_counts = stats.get("counts_by_domain", {})
+        if not isinstance(domain_counts, dict):
+            domain_counts = {}
+
+        status_bits = " | ".join(
+            f"{escape(str(key))}: {int(value)}"
+            for key, value in sorted(status_counts.items(), key=lambda kv: str(kv[0]))
+        ) or "none"
+        domain_bits = " | ".join(
+            f"{escape(str(key))}: {int(value)}"
+            for key, value in sorted(domain_counts.items(), key=lambda kv: str(kv[0]))
+        ) or "none"
+
+        table_rows: list[str] = []
+        for row in rows:
+            run_id = str(row.get("run_id", ""))
+            task_id = str(row.get("task_id", ""))
+            domain = str(row.get("domain", ""))
+            status = str(row.get("status", ""))
+            timestamp = str(row.get("timestamp_utc", ""))
+            objective = str(row.get("objective", ""))
+            source_count = int(row.get("research_source_count", 0) or 0)
+
+            run_dir = f"data/runs/{run_id}/"
+            evidence = f"data/runs/{run_id}/evidence_bundle.json"
+            summary = f"data/runs/{run_id}/summary.json"
+            trace = f"data/runs/{run_id}/trace.json"
+
+            links = (
+                f"<a href=\"{escape(run_dir)}\">run_dir</a> "
+                f"<a href=\"{escape(evidence)}\">evidence</a> "
+                f"<a href=\"{escape(summary)}\">summary</a> "
+                f"<a href=\"{escape(trace)}\">trace</a>"
+            )
+            table_rows.append(
+                "<tr>"
+                f"<td>{escape(run_id)}</td>"
+                f"<td>{escape(task_id)}</td>"
+                f"<td>{escape(status)}</td>"
+                f"<td>{escape(domain)}</td>"
+                f"<td>{escape(timestamp)}</td>"
+                f"<td>{escape(objective)}</td>"
+                f"<td>{source_count}</td>"
+                f"<td>{links}</td>"
+                "</tr>"
+            )
+
+        rows_html = "\n".join(table_rows) if len(table_rows) > 0 else (
+            "<tr><td colspan=\"8\">No runs found for this scope.</td></tr>"
+        )
+        return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CodexJarvis Runs Dashboard</title>
+  <style>
+    body {{
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      margin: 20px;
+      color: #1c1c1c;
+      background: linear-gradient(135deg, #f7fafc, #edf2f7);
+    }}
+    .card {{
+      background: #ffffff;
+      border: 1px solid #d9e2ec;
+      border-radius: 10px;
+      padding: 14px 16px;
+      margin-bottom: 14px;
+    }}
+    table {{
+      width: 100%;
+      border-collapse: collapse;
+      background: #ffffff;
+    }}
+    th, td {{
+      border: 1px solid #e2e8f0;
+      text-align: left;
+      padding: 8px;
+      vertical-align: top;
+      font-size: 13px;
+    }}
+    th {{
+      background: #f1f5f9;
+      position: sticky;
+      top: 0;
+    }}
+    code {{
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      padding: 2px 6px;
+    }}
+    a {{
+      margin-right: 6px;
+    }}
+  </style>
+</head>
+<body>
+  <h1>CodexJarvis Runs Dashboard</h1>
+  <div class="card">
+    <div><strong>Generated:</strong> <code>{escape(generated_at_utc)}</code></div>
+    <div><strong>Scope:</strong> limit=<code>{int(scope.get("limit", 0))}</code> domain=<code>{escape(str(scope.get("domain", "")))}</code> include_failed=<code>{bool(scope.get("include_failed", True))}</code></div>
+    <div><strong>Total in table:</strong> <code>{len(rows)}</code></div>
+    <div><strong>Status counts:</strong> {status_bits}</div>
+    <div><strong>Domain counts:</strong> {domain_bits}</div>
+  </div>
+  <div class="card">
+    <table>
+      <thead>
+        <tr>
+          <th>run_id</th>
+          <th>task_id</th>
+          <th>status</th>
+          <th>domain</th>
+          <th>timestamp_utc</th>
+          <th>objective</th>
+          <th>research_sources</th>
+          <th>links</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows_html}
+      </tbody>
+    </table>
+  </div>
+</body>
+</html>
+"""
 
     @staticmethod
     def _summarize_trace(trace: dict[str, Any]) -> dict[str, Any]:
