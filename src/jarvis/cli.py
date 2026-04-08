@@ -58,6 +58,16 @@ def build_parser() -> argparse.ArgumentParser:
     mem_search_parser.add_argument("--domain", type=str, required=False)
     mem_search_parser.add_argument("--status", type=str, required=False)
 
+    mem_semantic_parser = subparsers.add_parser(
+        "memory-semantic-search",
+        help="Search runs by semantic similarity over memo/objective sparse vectors.",
+    )
+    mem_semantic_parser.add_argument("--query", type=str, required=True)
+    mem_semantic_parser.add_argument("--limit", type=int, default=10)
+    mem_semantic_parser.add_argument("--domain", type=str, required=False)
+    mem_semantic_parser.add_argument("--status", type=str, required=False)
+    mem_semantic_parser.add_argument("--min-score", type=float, default=0.0)
+
     mem_get_parser = subparsers.add_parser(
         "memory-get",
         help="Get one indexed run and its artifacts from SQLite memory store.",
@@ -135,6 +145,14 @@ def main(argv: list[str] | None = None) -> int:
                 limit=args.limit,
                 domain=args.domain,
                 status=args.status,
+            )
+        elif args.command == "memory-semantic-search":
+            payload = engine.memory_semantic_search(
+                query=args.query,
+                limit=args.limit,
+                domain=args.domain,
+                status=args.status,
+                min_score=args.min_score,
             )
         elif args.command == "memory-get":
             payload = engine.memory_get(args.run_id)

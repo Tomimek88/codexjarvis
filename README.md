@@ -13,7 +13,7 @@ This repository now contains a working baseline for:
 - research/source tracking with local files + optional URLs
 - queue runner for asynchronous task processing
 - replay from stored runs
-- SQLite memory index + memo search for prior runs
+- SQLite memory index + memo/semantic search for prior runs
 - bootstrap scripts for local setup
 
 ## What Is Implemented Right Now
@@ -147,6 +147,7 @@ jarvis --root <project_root> replay --run-id <run_id>
 jarvis --root <project_root> trace --run-id <run_id>
 jarvis --root <project_root> memory-query --limit 20 [--domain generic] [--status SUCCESS] [--contains text]
 jarvis --root <project_root> memory-search --query "<text>" [--limit 10] [--domain generic] [--status SUCCESS]
+jarvis --root <project_root> memory-semantic-search --query "<text>" [--limit 10] [--domain generic] [--status SUCCESS] [--min-score 0.0]
 jarvis --root <project_root> memory-get --run-id <run_id>
 jarvis --root <project_root> memory-index --run-id <run_id>
 jarvis --root <project_root> queue-submit --task-file <task.json> [--dry-run] [--max-attempts 1]
@@ -162,6 +163,7 @@ jarvis --root <project_root> queue-work [--max-jobs 10] [--worker-id worker-1]
 - Indexed data includes core hashes, metrics, summary/evidence paths, and artifact hashes.
 - `memory-query` is the fast operator-facing lookup for replay/reuse decisions.
 - `memory-search` returns ranked runs by memo/objective token match.
+- `memory-semantic-search` returns cosine-ranked runs from local sparse vectors.
 - Obsidian can still be used as human notes, but this SQLite DB is the source of truth for deterministic runtime memory.
 
 ## Truth Layer (Current)

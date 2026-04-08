@@ -57,6 +57,14 @@ class MemoryStore:
                   updated_at_utc TEXT NOT NULL,
                   FOREIGN KEY(run_id) REFERENCES runs(run_id) ON DELETE CASCADE
                 );
+
+                CREATE TABLE IF NOT EXISTS run_vectors(
+                  run_id TEXT PRIMARY KEY,
+                  vector_json TEXT NOT NULL,
+                  norm REAL NOT NULL,
+                  updated_at_utc TEXT NOT NULL,
+                  FOREIGN KEY(run_id) REFERENCES runs(run_id) ON DELETE CASCADE
+                );
                 """
             )
             con.commit()
@@ -165,6 +173,24 @@ class MemoryStore:
                   updated_at_utc=excluded.updated_at_utc
                 """,
                 (run_id, effective_memo),
+            )
+
+            vector_text = " ".join([task_id, domain, objective, effective_memo])
+            sparse_vector = _build_sparse_vector(vector_text)
+            con.execute(
+                """
+                INSERT INTO run_vectors(run_id, vector_json, norm, updated_at_utc)
+                VALUES (?, ?, ?, datetime('now'))
+                ON CONFLICT(run_id) DO UPDATE SET
+                  vector_json=excluded.vector_json,
+                  norm=excluded.norm,
+                  updated_at_utc=excluded.updated_at_utc
+                """,
+                (
+                    run_id,
+                    json.dumps(sparse_vector, sort_keys=True, ensure_ascii=True),
+                    _l2_norm(sparse_vector),
+                ),
             )
             con.commit()
         finally:
@@ -285,12 +311,119 @@ class MemoryStore:
 
             metrics = json.loads(rec.pop("metrics_json"))
             memo = rec.pop("memo_text")
+            if not memo:
+                memo = (
+                    f"task_id={rec.get('task_id', '')}; "
+                    f"domain={rec.get('domain', '')}; "
+                    f"objective={rec.get('objective', '')}"
+                )
             rec["metrics"] = metrics
             rec["memo_preview"] = memo[:400]
             rec["score"] = round(score, 6)
             scored.append(rec)
 
         scored = sorted(scored, key=lambda item: (-item["score"], item["timestamp_utc"]))
+        return scored[: max(1, min(limit, 100))]
+
+    def semantic_search_runs(
+        self,
+        *,
+        query: str,
+        limit: int = 10,
+        domain: str | None = None,
+        status: str | None = None,
+        min_score: float = 0.0,
+    ) -> list[dict[str, Any]]:
+        self.ensure_schema()
+        query_vector = _build_sparse_vector(query)
+        query_norm = _l2_norm(query_vector)
+        if query_norm <= 0.0:
+            return []
+
+        clauses: list[str] = []
+        params: list[Any] = []
+        if domain:
+            clauses.append("r.domain = ?")
+            params.append(domain)
+        if status:
+            clauses.append("r.status = ?")
+            params.append(status)
+        where_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+
+        sql = f"""
+            SELECT r.run_id, r.task_id, r.domain, r.objective, r.cache_key, r.timestamp_utc, r.status,
+                   r.input_hash, r.params_hash, r.code_hash, r.env_hash, r.seed,
+                   r.summary_path, r.evidence_path, r.metrics_json,
+                   COALESCE(m.memo_text, '') AS memo_text,
+                   v.vector_json AS vector_json,
+                   COALESCE(v.norm, 0.0) AS vector_norm
+            FROM runs r
+            LEFT JOIN run_memos m ON m.run_id = r.run_id
+            LEFT JOIN run_vectors v ON v.run_id = r.run_id
+            {where_sql}
+            ORDER BY r.timestamp_utc DESC
+            LIMIT 1000
+        """
+
+        con = self._connect()
+        try:
+            rows = con.execute(sql, params).fetchall()
+        finally:
+            con.close()
+
+        scored: list[dict[str, Any]] = []
+        threshold = max(0.0, float(min_score))
+        for row in rows:
+            rec = dict(row)
+            vector_json = rec.pop("vector_json")
+            memo_text = str(rec.pop("memo_text", ""))
+
+            if vector_json:
+                try:
+                    doc_vector = {
+                        str(k): float(v)
+                        for k, v in json.loads(vector_json).items()
+                    }
+                except (ValueError, TypeError, json.JSONDecodeError):
+                    doc_vector = {}
+            else:
+                doc_vector = {}
+
+            if len(doc_vector) == 0:
+                doc_vector = _build_sparse_vector(
+                    " ".join(
+                        [
+                            str(rec.get("task_id", "")),
+                            str(rec.get("domain", "")),
+                            str(rec.get("objective", "")),
+                            memo_text,
+                        ]
+                    )
+                )
+
+            doc_norm = float(rec.pop("vector_norm", 0.0) or 0.0)
+            if doc_norm <= 0.0:
+                doc_norm = _l2_norm(doc_vector)
+            if doc_norm <= 0.0:
+                continue
+
+            score = _cosine_sparse(query_vector, query_norm, doc_vector, doc_norm)
+            if score < threshold:
+                continue
+
+            metrics = json.loads(rec.pop("metrics_json"))
+            if not memo_text:
+                memo_text = (
+                    f"task_id={rec.get('task_id', '')}; "
+                    f"domain={rec.get('domain', '')}; "
+                    f"objective={rec.get('objective', '')}"
+                )
+            rec["metrics"] = metrics
+            rec["memo_preview"] = memo_text[:400]
+            rec["semantic_score"] = round(score, 6)
+            scored.append(rec)
+
+        scored = sorted(scored, key=lambda item: (-item["semantic_score"], item["timestamp_utc"]))
         return scored[: max(1, min(limit, 100))]
 
     def get_run(self, run_id: str) -> dict[str, Any] | None:
@@ -349,3 +482,37 @@ class MemoryStore:
 
 def _tokenize(text: str) -> list[str]:
     return [token for token in re.findall(r"[a-z0-9_]+", text.lower()) if len(token) >= 2]
+
+
+def _build_sparse_vector(text: str) -> dict[str, float]:
+    vector: dict[str, float] = {}
+    for token in _tokenize(text):
+        vector[token] = vector.get(token, 0.0) + 1.0
+    return vector
+
+
+def _l2_norm(vector: dict[str, float]) -> float:
+    return sum(value * value for value in vector.values()) ** 0.5
+
+
+def _cosine_sparse(
+    query_vector: dict[str, float],
+    query_norm: float,
+    doc_vector: dict[str, float],
+    doc_norm: float,
+) -> float:
+    if query_norm <= 0.0 or doc_norm <= 0.0:
+        return 0.0
+
+    if len(query_vector) <= len(doc_vector):
+        small, large = query_vector, doc_vector
+    else:
+        small, large = doc_vector, query_vector
+
+    dot = 0.0
+    for key, value in small.items():
+        dot += value * large.get(key, 0.0)
+
+    if dot <= 0.0:
+        return 0.0
+    return dot / (query_norm * doc_norm)

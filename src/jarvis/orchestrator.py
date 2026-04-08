@@ -497,6 +497,24 @@ class JarvisEngine:
         )
         return {"status": "ok", "count": len(rows), "results": rows}
 
+    def memory_semantic_search(
+        self,
+        *,
+        query: str,
+        limit: int = 10,
+        domain: str | None = None,
+        status: str | None = None,
+        min_score: float = 0.0,
+    ) -> dict[str, Any]:
+        rows = self.memory.semantic_search_runs(
+            query=query,
+            limit=limit,
+            domain=domain,
+            status=status,
+            min_score=min_score,
+        )
+        return {"status": "ok", "count": len(rows), "results": rows}
+
     def index_run(self, run_id: str) -> dict[str, Any]:
         run_dir = self.store.run_path(run_id)
         if not run_dir.exists():
