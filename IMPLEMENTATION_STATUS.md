@@ -23,6 +23,7 @@
   - deterministic cache key according to memory policy fields
   - first real markets engine: CSV-backed MA crossover backtest
   - Truth Layer v1: claim-evidence validator with automatic block on unsupported user claims
+  - Truth Layer v1.1: richer evidence ref operators (`contains`, `regex`, metric equality/existence)
   - Research Layer v1: source collection + hashed source snapshots + per-run manifest
   - Structured source extraction: JSON pretty-print + CSV/TSV tabular preview
   - Execution policy v1: timeout + retry control with execution manifest

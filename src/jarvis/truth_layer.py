@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
 
@@ -121,6 +122,20 @@ def has_unsupported_user_claims(claim_validation: dict[str, Any]) -> bool:
 
 
 def _evidence_ref_exists(ref: str, evidence_bundle: dict[str, Any]) -> bool:
+    if ref.startswith("metrics.exists:"):
+        key = ref.split(":", 1)[1]
+        return key in evidence_bundle.get("metrics", {})
+
+    if ref.startswith("metrics.value_eq:"):
+        raw = ref.split(":", 1)[1]
+        if "=" not in raw:
+            return False
+        key, expected = raw.split("=", 1)
+        metrics = evidence_bundle.get("metrics", {})
+        if key not in metrics:
+            return False
+        return str(metrics.get(key)) == expected
+
     if ref.startswith("metrics."):
         key = ref.split(".", 1)[1]
         return key in evidence_bundle.get("metrics", {})
@@ -130,6 +145,21 @@ def _evidence_ref_exists(ref: str, evidence_bundle: dict[str, Any]) -> bool:
     if ref == "logs.stderr":
         return bool(evidence_bundle.get("logs", {}).get("stderr", "") is not None)
 
+    if ref.startswith("logs.stdout.contains:"):
+        needle = ref.split(":", 1)[1]
+        hay = str(evidence_bundle.get("logs", {}).get("stdout", ""))
+        return needle.lower() in hay.lower()
+    if ref.startswith("logs.stderr.contains:"):
+        needle = ref.split(":", 1)[1]
+        hay = str(evidence_bundle.get("logs", {}).get("stderr", ""))
+        return needle.lower() in hay.lower()
+    if ref.startswith("logs.stdout.regex:"):
+        pattern = ref.split(":", 1)[1]
+        return _matches_regex(pattern, str(evidence_bundle.get("logs", {}).get("stdout", "")))
+    if ref.startswith("logs.stderr.regex:"):
+        pattern = ref.split(":", 1)[1]
+        return _matches_regex(pattern, str(evidence_bundle.get("logs", {}).get("stderr", "")))
+
     if ref.startswith("artifacts.kind:"):
         kind = ref.split(":", 1)[1]
         return any(a.get("kind") == kind for a in evidence_bundle.get("artifacts", []))
@@ -138,4 +168,23 @@ def _evidence_ref_exists(ref: str, evidence_bundle: dict[str, Any]) -> bool:
         target = ref.split(":", 1)[1]
         return any(a.get("path") == target for a in evidence_bundle.get("artifacts", []))
 
+    if ref.startswith("artifacts.path_contains:"):
+        fragment = ref.split(":", 1)[1].lower()
+        return any(fragment in str(a.get("path", "")).lower() for a in evidence_bundle.get("artifacts", []))
+
+    if ref.startswith("artifacts.path_regex:"):
+        pattern = ref.split(":", 1)[1]
+        for artifact in evidence_bundle.get("artifacts", []):
+            path = str(artifact.get("path", ""))
+            if _matches_regex(pattern, path):
+                return True
+        return False
+
     return False
+
+
+def _matches_regex(pattern: str, text: str) -> bool:
+    try:
+        return re.search(pattern, text) is not None
+    except re.error:
+        return False

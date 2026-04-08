@@ -174,6 +174,12 @@ jarvis --root <project_root> queue-work [--max-jobs 10] [--worker-id worker-1]
 
 - Auto metric claims are created from computed metrics and must resolve to evidence refs (`metrics.<key>`).
 - User claims can be supplied in task parameters under `claims`.
+- Supported advanced evidence refs now include:
+  - `metrics.exists:<key>`
+  - `metrics.value_eq:<key>=<value>`
+  - `logs.stdout.contains:<text>` / `logs.stderr.contains:<text>`
+  - `logs.stdout.regex:<pattern>` / `logs.stderr.regex:<pattern>`
+  - `artifacts.path_contains:<fragment>` / `artifacts.path_regex:<pattern>`
 - If any user claim lacks resolvable evidence refs, the run output is blocked with:
   - `status: blocked_by_truth_layer`
   - `message: Nevim, musim to nasimulovat.`
