@@ -590,22 +590,12 @@ class JarvisEngine:
             warnings.append("report_skipped_queue_not_processed")
 
         job_status = str(final_job.get("status", "QUEUED") or "QUEUED").upper()
-        mission_status = {
-            "SUCCESS": "completed",
-            "FAILED": "failed",
-            "CANCELLED": "cancelled",
-            "RUNNING": "running",
-            "QUEUED": "queued",
-        }.get(job_status, job_status.lower())
+        mission_status = self._mission_status_from_job_status(job_status)
 
         run_id = str(final_job.get("run_id", "") or "").strip()
         queue_result_payload = self._load_queue_result_payload(final_job)
-        if not run_id and isinstance(queue_result_payload, dict):
-            run_id = str(queue_result_payload.get("run_id", "") or "").strip()
-            if not run_id:
-                nested = queue_result_payload.get("result", {})
-                if isinstance(nested, dict):
-                    run_id = str(nested.get("run_id", "") or "").strip()
+        if not run_id:
+            run_id = self._extract_run_id_from_queue_result(queue_result_payload)
 
         report_payload: dict[str, Any] | None = None
         if generate_report and run_id:
@@ -646,6 +636,73 @@ class JarvisEngine:
             "queue_result": queue_result_payload,
             "processed_now": bool(process_now),
             "daemon": daemon_payload,
+            "report": report_payload,
+            "dashboard": dashboard_payload,
+            "warnings": warnings,
+        }
+
+    def mission_get(
+        self,
+        *,
+        job_id: str,
+        generate_report: bool = True,
+        generate_dashboard: bool = True,
+        dashboard_limit: int = 50,
+        dashboard_domain: str | None = None,
+    ) -> dict[str, Any]:
+        job = self.queue.get_job(job_id)
+        job_status = str(job.get("status", "QUEUED") or "QUEUED").upper()
+        mission_status = self._mission_status_from_job_status(job_status)
+        warnings: list[str] = []
+
+        run_id = str(job.get("run_id", "") or "").strip()
+        queue_result_payload = self._load_queue_result_payload(job)
+        if not run_id:
+            run_id = self._extract_run_id_from_queue_result(queue_result_payload)
+
+        report_payload: dict[str, Any] | None = None
+        if generate_report and run_id:
+            try:
+                report_payload = self.report_run(run_id)
+            except Exception as exc:
+                report_payload = {
+                    "status": "error",
+                    "error": f"{type(exc).__name__}: {exc}",
+                }
+                warnings.append("report_generation_failed")
+        elif generate_report:
+            warnings.append("report_skipped_no_run_id")
+
+        dashboard_payload: dict[str, Any] | None = None
+        task = job.get("task", {})
+        task_domain = str(task.get("domain", "")).strip().lower() if isinstance(task, dict) else ""
+        effective_dashboard_domain = (
+            str(dashboard_domain).strip().lower()
+            if isinstance(dashboard_domain, str) and dashboard_domain.strip()
+            else task_domain
+        )
+        if generate_dashboard:
+            try:
+                dashboard_payload = self.runs_dashboard(
+                    limit=dashboard_limit,
+                    domain=effective_dashboard_domain or None,
+                    include_failed=True,
+                )
+            except Exception as exc:
+                dashboard_payload = {
+                    "status": "error",
+                    "error": f"{type(exc).__name__}: {exc}",
+                }
+                warnings.append("dashboard_generation_failed")
+
+        return {
+            "status": "ok",
+            "mission_status": mission_status,
+            "job_id": str(job.get("job_id", job_id)),
+            "job_status": job_status,
+            "run_id": run_id,
+            "job": job,
+            "queue_result": queue_result_payload,
             "report": report_payload,
             "dashboard": dashboard_payload,
             "warnings": warnings,
@@ -2786,6 +2843,31 @@ class JarvisEngine:
         except Exception:
             return None
         return payload if isinstance(payload, dict) else None
+
+    @staticmethod
+    def _extract_run_id_from_queue_result(result_payload: dict[str, Any] | None) -> str:
+        if not isinstance(result_payload, dict):
+            return ""
+        direct = str(result_payload.get("run_id", "") or "").strip()
+        if direct:
+            return direct
+        nested = result_payload.get("result", {})
+        if isinstance(nested, dict):
+            nested_run_id = str(nested.get("run_id", "") or "").strip()
+            if nested_run_id:
+                return nested_run_id
+        return ""
+
+    @staticmethod
+    def _mission_status_from_job_status(job_status: str) -> str:
+        status = str(job_status or "").upper()
+        return {
+            "SUCCESS": "completed",
+            "FAILED": "failed",
+            "CANCELLED": "cancelled",
+            "RUNNING": "running",
+            "QUEUED": "queued",
+        }.get(status, status.lower())
 
     @staticmethod
     def _trace_event(trace: dict[str, Any], stage: str, details: dict[str, Any] | None = None) -> None:

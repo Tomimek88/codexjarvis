@@ -64,6 +64,7 @@
   - Quick CLI execution commands: `run-quick` and `queue-submit-quick`
   - Mission one-command operator flow: `mission` (quick run + report + dashboard)
   - Mission queue flow: `mission-queue` with optional immediate processing (`--process-now`)
+  - Mission status/finalization command: `mission-get` by queue `job_id`
   - Memory index audit command: `memory-audit`
   - Memory stale-index cleanup command: `memory-clean` (supports `--dry-run`)
   - Doctor memory-index stale-reference warning + autofix cleanup integration

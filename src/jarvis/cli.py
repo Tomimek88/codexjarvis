@@ -127,6 +127,16 @@ def build_parser() -> argparse.ArgumentParser:
     mission_queue_parser.add_argument("--no-dashboard", action="store_true")
     mission_queue_parser.add_argument("--dashboard-limit", type=int, default=50)
 
+    mission_get_parser = subparsers.add_parser(
+        "mission-get",
+        help="Get mission status by queue job id and optionally generate report/dashboard.",
+    )
+    mission_get_parser.add_argument("--job-id", type=str, required=True)
+    mission_get_parser.add_argument("--no-report", action="store_true")
+    mission_get_parser.add_argument("--no-dashboard", action="store_true")
+    mission_get_parser.add_argument("--dashboard-limit", type=int, default=50)
+    mission_get_parser.add_argument("--dashboard-domain", type=str, required=False)
+
     batch_parser = subparsers.add_parser(
         "batch-run",
         help="Run multiple task JSON files from a directory.",
@@ -540,6 +550,14 @@ def main(argv: list[str] | None = None) -> int:
                 generate_report=not bool(args.no_report),
                 generate_dashboard=not bool(args.no_dashboard),
                 dashboard_limit=args.dashboard_limit,
+            )
+        elif args.command == "mission-get":
+            payload = engine.mission_get(
+                job_id=args.job_id,
+                generate_report=not bool(args.no_report),
+                generate_dashboard=not bool(args.no_dashboard),
+                dashboard_limit=args.dashboard_limit,
+                dashboard_domain=args.dashboard_domain,
             )
         elif args.command == "batch-run":
             payload = engine.batch_run(
