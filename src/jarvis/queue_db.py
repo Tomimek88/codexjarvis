@@ -308,6 +308,68 @@ class QueueStore:
             "dead_failed_count": int(dead_failed["dead_failed_count"]),
         }
 
+    def requeue_failed(self, *, limit: int = 20, reset_attempts: bool = True) -> dict[str, Any]:
+        self.ensure_schema()
+        safe_limit = max(1, min(int(limit), 1000))
+        con = self._connect()
+        try:
+            rows = con.execute(
+                """
+                SELECT job_id
+                FROM jobs
+                WHERE status = 'FAILED'
+                ORDER BY finished_at_utc DESC, job_id DESC
+                LIMIT ?
+                """,
+                (safe_limit,),
+            ).fetchall()
+            job_ids = [str(row["job_id"]) for row in rows]
+            if len(job_ids) == 0:
+                return {"requested_limit": safe_limit, "requeued_count": 0, "jobs": []}
+
+            for job_id in job_ids:
+                if reset_attempts:
+                    con.execute(
+                        """
+                        UPDATE jobs
+                        SET status='QUEUED',
+                            started_at_utc=NULL,
+                            finished_at_utc=NULL,
+                            worker_id='',
+                            run_id='',
+                            result_path='',
+                            last_error='',
+                            attempts=0
+                        WHERE job_id=?
+                        """,
+                        (job_id,),
+                    )
+                else:
+                    con.execute(
+                        """
+                        UPDATE jobs
+                        SET status='QUEUED',
+                            started_at_utc=NULL,
+                            finished_at_utc=NULL,
+                            worker_id='',
+                            run_id='',
+                            result_path='',
+                            last_error=''
+                        WHERE job_id=?
+                        """,
+                        (job_id,),
+                    )
+            con.commit()
+        finally:
+            con.close()
+
+        jobs = [self.get_job(job_id) for job_id in job_ids]
+        return {
+            "requested_limit": safe_limit,
+            "requeued_count": len(job_ids),
+            "jobs": jobs,
+        }
+
     def _write_result(self, job_id: str, payload: dict[str, Any]) -> str:
         self.results_dir.mkdir(parents=True, exist_ok=True)
         path = self.results_dir / f"{job_id}.json"

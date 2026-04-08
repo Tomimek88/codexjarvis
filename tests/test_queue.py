@@ -125,6 +125,34 @@ class QueueTests(unittest.TestCase):
             self.assertEqual(counts["QUEUED"], 1)
             self.assertEqual(stats["stats"]["retry_queued_count"], 1)
 
+    def test_queue_requeue_failed_resets_attempts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            engine = JarvisEngine(root)
+            task = _base_task("task-q-0006")
+            task["parameters"]["simulate_delay_sec"] = 1.2
+            task["parameters"]["execution_policy"] = {
+                "timeout_sec": 1,
+                "max_retries": 0,
+                "retry_delay_sec": 0.0,
+            }
+            submitted = engine.queue_submit(task, dry_run=False, max_attempts=1)
+            job_id = submitted["job"]["job_id"]
+
+            failed = engine.queue_work_once(worker_id="worker-requeue")
+            self.assertEqual(failed["status"], "job_failed")
+            self.assertFalse(failed["requeued"])
+            self.assertEqual(failed["job"]["status"], "FAILED")
+
+            requeued = engine.queue_requeue_failed(limit=10, reset_attempts=True)
+            self.assertEqual(requeued["status"], "ok")
+            self.assertGreaterEqual(requeued["requeued_count"], 1)
+            self.assertTrue(any(job["job_id"] == job_id for job in requeued["jobs"]))
+
+            fetched = engine.queue_get(job_id)
+            self.assertEqual(fetched["job"]["status"], "QUEUED")
+            self.assertEqual(int(fetched["job"]["attempts"]), 0)
+
 
 if __name__ == "__main__":
     unittest.main()

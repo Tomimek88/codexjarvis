@@ -229,6 +229,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Show queue aggregate stats and retry/dead-letter counts.",
     )
 
+    queue_requeue_parser = subparsers.add_parser(
+        "queue-requeue-failed",
+        help="Move failed jobs back to QUEUED state.",
+    )
+    queue_requeue_parser.add_argument("--limit", type=int, default=20)
+    queue_requeue_parser.add_argument("--keep-attempts", action="store_true")
+
     queue_work_once_parser = subparsers.add_parser(
         "queue-work-once",
         help="Process at most one queued job.",
@@ -366,6 +373,11 @@ def main(argv: list[str] | None = None) -> int:
             payload = engine.queue_get(args.job_id)
         elif args.command == "queue-stats":
             payload = engine.queue_stats()
+        elif args.command == "queue-requeue-failed":
+            payload = engine.queue_requeue_failed(
+                limit=args.limit,
+                reset_attempts=not bool(args.keep_attempts),
+            )
         elif args.command == "queue-work-once":
             payload = engine.queue_work_once(worker_id=args.worker_id)
         elif args.command == "queue-work":

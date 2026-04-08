@@ -1714,6 +1714,15 @@ class JarvisEngine:
     def queue_stats(self) -> dict[str, Any]:
         return {"status": "ok", "stats": self.queue.stats()}
 
+    def queue_requeue_failed(self, *, limit: int = 20, reset_attempts: bool = True) -> dict[str, Any]:
+        out = self.queue.requeue_failed(limit=limit, reset_attempts=reset_attempts)
+        return {
+            "status": "ok",
+            "requested_limit": out.get("requested_limit", 0),
+            "requeued_count": out.get("requeued_count", 0),
+            "jobs": out.get("jobs", []),
+        }
+
     def queue_work_once(self, *, worker_id: str | None = None) -> dict[str, Any]:
         wid = worker_id or f"worker_{uuid4().hex[:8]}"
         job = self.queue.claim_next_job(wid)
