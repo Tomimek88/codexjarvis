@@ -838,6 +838,70 @@ class JarvisEngine:
             "reports": reports,
         }
 
+    def runs_list(
+        self,
+        *,
+        limit: int = 20,
+        status: str | None = None,
+        domain: str | None = None,
+        contains: str | None = None,
+    ) -> dict[str, Any]:
+        self.store.ensure_layout()
+        safe_limit = max(1, min(int(limit), 500))
+        rows: list[dict[str, Any]] = []
+        status_filter = status.strip().upper() if isinstance(status, str) and status.strip() else None
+        domain_filter = domain.strip().lower() if isinstance(domain, str) and domain.strip() else None
+        contains_filter = contains.strip().lower() if isinstance(contains, str) and contains.strip() else None
+
+        run_dirs = [path for path in self.store.runs_dir.iterdir() if path.is_dir()]
+        run_dirs = sorted(run_dirs, key=lambda path: path.name, reverse=True)
+        for run_dir in run_dirs:
+            run_id = run_dir.name
+            meta_path = run_dir / "meta.json"
+            evidence_path = run_dir / "evidence_bundle.json"
+            if not meta_path.exists() or not evidence_path.exists():
+                continue
+
+            try:
+                meta = load_json_file(meta_path)
+                evidence = load_json_file(evidence_path)
+            except Exception:
+                continue
+
+            row_status = str(evidence.get("status", meta.get("status", ""))).upper()
+            row_domain = str(meta.get("domain", evidence.get("domain", ""))).lower()
+            task_id = str(meta.get("task_id", ""))
+            objective = str(meta.get("objective", ""))
+
+            if status_filter and row_status != status_filter:
+                continue
+            if domain_filter and row_domain != domain_filter:
+                continue
+            if contains_filter:
+                hay = " ".join([run_id, task_id, objective, row_domain]).lower()
+                if contains_filter not in hay:
+                    continue
+
+            row = {
+                "run_id": run_id,
+                "task_id": task_id,
+                "domain": row_domain,
+                "objective": objective,
+                "status": row_status,
+                "timestamp_utc": str(meta.get("timestamp_utc", evidence.get("timestamp_utc", ""))),
+                "cache_key": str(meta.get("cache_key", "")),
+                "research_source_count": int(meta.get("research_source_count", 0) or 0),
+            }
+            rows.append(row)
+            if len(rows) >= safe_limit:
+                break
+
+        return {
+            "status": "ok",
+            "count": len(rows),
+            "runs": rows,
+        }
+
     def memory_query(
         self,
         *,

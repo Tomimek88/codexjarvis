@@ -149,6 +149,7 @@ jarvis --root <project_root> inspect --run-id <run_id>
 jarvis --root <project_root> compare --run-a <run_id> --run-b <run_id>
 jarvis --root <project_root> audit-run --run-id <run_id>
 jarvis --root <project_root> audit-all [--limit 50] [--include-passed]
+jarvis --root <project_root> runs-list [--limit 20] [--status SUCCESS] [--domain generic] [--contains text]
 jarvis --root <project_root> memory-query --limit 20 [--domain generic] [--status SUCCESS] [--contains text]
 jarvis --root <project_root> memory-search --query "<text>" [--limit 10] [--domain generic] [--status SUCCESS]
 jarvis --root <project_root> memory-semantic-search --query "<text>" [--limit 10] [--domain generic] [--status SUCCESS] [--min-score 0.0]
@@ -226,6 +227,11 @@ jarvis --root <project_root> queue-work [--max-jobs 10] [--worker-id worker-1]
   - evidence bundle schema is valid
   - artifact files exist and SHA256 matches evidence references
 - `audit-all` scans multiple runs and returns aggregate pass/fail counts.
+
+## Run History (Current)
+
+- `runs-list` reads `data/runs/*` directly and returns recent run metadata.
+- Supports filtering by `status`, `domain`, and free-text `contains`.
 
 ## Queue Runner (Current)
 

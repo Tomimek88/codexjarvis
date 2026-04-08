@@ -66,6 +66,15 @@ def build_parser() -> argparse.ArgumentParser:
     audit_all_parser.add_argument("--limit", type=int, default=50)
     audit_all_parser.add_argument("--include-passed", action="store_true")
 
+    runs_list_parser = subparsers.add_parser(
+        "runs-list",
+        help="List runs from data/runs with optional filters.",
+    )
+    runs_list_parser.add_argument("--limit", type=int, default=20)
+    runs_list_parser.add_argument("--status", type=str, required=False)
+    runs_list_parser.add_argument("--domain", type=str, required=False)
+    runs_list_parser.add_argument("--contains", type=str, required=False)
+
     mem_query_parser = subparsers.add_parser(
         "memory-query",
         help="Query indexed run metadata from SQLite memory store.",
@@ -190,6 +199,13 @@ def main(argv: list[str] | None = None) -> int:
             payload = engine.audit_run(args.run_id)
         elif args.command == "audit-all":
             payload = engine.audit_all(limit=args.limit, include_passed=bool(args.include_passed))
+        elif args.command == "runs-list":
+            payload = engine.runs_list(
+                limit=args.limit,
+                status=args.status,
+                domain=args.domain,
+                contains=args.contains,
+            )
         elif args.command == "memory-query":
             payload = engine.memory_query(
                 limit=args.limit,
