@@ -10,7 +10,7 @@ from uuid import uuid4
 from .constants import FALLBACK_NO_GUESS
 from .contracts import ValidationError, load_json_file, validate_evidence_bundle, validate_task_request
 from .execution import build_execution_policy, execute_with_policy
-from .hashing import compute_cache_key, compute_code_hash, sha256_object
+from .hashing import compute_cache_key, compute_code_hash, sha256_file, sha256_object
 from .memory_db import MemoryStore
 from .queue_db import QueueStore
 from .research import collect_research_artifacts
@@ -647,6 +647,197 @@ class JarvisEngine:
             },
         }
 
+    def audit_run(self, run_id: str) -> dict[str, Any]:
+        run_dir = self.store.run_path(run_id)
+        if not run_dir.exists():
+            raise ValidationError(f"Run '{run_id}' does not exist.")
+
+        issues: list[dict[str, Any]] = []
+        required_files = [
+            "meta.json",
+            "input_manifest.json",
+            "params.json",
+            "summary.json",
+            "evidence_bundle.json",
+            "results/result.json",
+            "stdout.log",
+            "stderr.log",
+            "execution_manifest.json",
+            "trace.json",
+        ]
+        for rel in required_files:
+            path = run_dir / rel
+            if not path.exists():
+                issues.append(
+                    {
+                        "code": "missing_required_file",
+                        "path": f"data/runs/{run_id}/{rel}",
+                        "message": "Required run file is missing.",
+                    }
+                )
+
+        evidence: dict[str, Any] | None = None
+        try:
+            evidence = self.store.load_evidence(run_id)
+            validate_evidence_bundle(evidence)
+        except Exception as exc:
+            issues.append(
+                {
+                    "code": "invalid_evidence_bundle",
+                    "path": f"data/runs/{run_id}/evidence_bundle.json",
+                    "message": f"{type(exc).__name__}: {exc}",
+                }
+            )
+            evidence = None
+
+        checked_artifacts = 0
+        hash_mismatches = 0
+        missing_artifacts = 0
+        if isinstance(evidence, dict):
+            if str(evidence.get("run_id", "")) != run_id:
+                issues.append(
+                    {
+                        "code": "run_id_mismatch",
+                        "path": f"data/runs/{run_id}/evidence_bundle.json",
+                        "message": "Evidence run_id does not match directory run_id.",
+                    }
+                )
+
+            artifacts = evidence.get("artifacts", [])
+            if not isinstance(artifacts, list):
+                issues.append(
+                    {
+                        "code": "invalid_artifacts_field",
+                        "path": f"data/runs/{run_id}/evidence_bundle.json",
+                        "message": "Field 'artifacts' is not a list.",
+                    }
+                )
+                artifacts = []
+
+            for idx, artifact in enumerate(artifacts):
+                if not isinstance(artifact, dict):
+                    issues.append(
+                        {
+                            "code": "invalid_artifact_entry",
+                            "path": f"data/runs/{run_id}/evidence_bundle.json",
+                            "message": f"Artifact entry at index {idx} is not an object.",
+                        }
+                    )
+                    continue
+
+                rel_path = str(artifact.get("path", "")).strip()
+                expected_sha = str(artifact.get("sha256", "")).strip()
+                if not rel_path or not expected_sha:
+                    issues.append(
+                        {
+                            "code": "invalid_artifact_entry",
+                            "path": f"data/runs/{run_id}/evidence_bundle.json",
+                            "message": f"Artifact entry at index {idx} is missing path or sha256.",
+                        }
+                    )
+                    continue
+
+                artifact_abs = (self.project_root / rel_path).resolve()
+                if not _is_within_root(artifact_abs, self.project_root.resolve()):
+                    issues.append(
+                        {
+                            "code": "artifact_path_outside_root",
+                            "path": rel_path,
+                            "message": "Artifact path resolves outside project root.",
+                        }
+                    )
+                    continue
+
+                checked_artifacts += 1
+                if not artifact_abs.exists():
+                    missing_artifacts += 1
+                    issues.append(
+                        {
+                            "code": "missing_artifact_file",
+                            "path": rel_path,
+                            "message": "Artifact file does not exist on disk.",
+                        }
+                    )
+                    continue
+
+                actual_sha = sha256_file(artifact_abs)
+                if actual_sha != expected_sha:
+                    hash_mismatches += 1
+                    issues.append(
+                        {
+                            "code": "artifact_hash_mismatch",
+                            "path": rel_path,
+                            "message": "Artifact SHA256 does not match evidence bundle.",
+                            "expected_sha256": expected_sha,
+                            "actual_sha256": actual_sha,
+                        }
+                    )
+
+        passed = len(issues) == 0
+        return {
+            "status": "ok",
+            "run_id": run_id,
+            "passed": passed,
+            "issue_count": len(issues),
+            "checked_artifact_count": checked_artifacts,
+            "hash_mismatch_count": hash_mismatches,
+            "missing_artifact_count": missing_artifacts,
+            "issues": issues,
+        }
+
+    def audit_all(
+        self,
+        *,
+        limit: int = 50,
+        include_passed: bool = False,
+    ) -> dict[str, Any]:
+        self.store.ensure_layout()
+        run_dirs = [path for path in self.store.runs_dir.iterdir() if path.is_dir()]
+        run_dirs = sorted(run_dirs, key=lambda path: path.name, reverse=True)
+        safe_limit = max(1, min(int(limit), 2000))
+        run_dirs = run_dirs[:safe_limit]
+
+        passed_count = 0
+        failed_count = 0
+        error_count = 0
+        reports: list[dict[str, Any]] = []
+        for run_dir in run_dirs:
+            run_id = run_dir.name
+            try:
+                report = self.audit_run(run_id)
+            except Exception as exc:
+                error_count += 1
+                report = {
+                    "status": "error",
+                    "run_id": run_id,
+                    "passed": False,
+                    "issue_count": 1,
+                    "issues": [
+                        {
+                            "code": "audit_exception",
+                            "path": f"data/runs/{run_id}",
+                            "message": f"{type(exc).__name__}: {exc}",
+                        }
+                    ],
+                }
+
+            if bool(report.get("passed", False)):
+                passed_count += 1
+                if include_passed:
+                    reports.append(report)
+            else:
+                failed_count += 1
+                reports.append(report)
+
+        return {
+            "status": "ok",
+            "scanned_count": len(run_dirs),
+            "passed_count": passed_count,
+            "failed_count": failed_count,
+            "error_count": error_count,
+            "reports": reports,
+        }
+
     def memory_query(
         self,
         *,
@@ -1114,3 +1305,11 @@ def _normalize_artifact_path(path: str, run_id: str) -> str:
     if norm.startswith(marker):
         return norm[len(marker) :]
     return norm
+
+
+def _is_within_root(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False

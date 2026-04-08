@@ -147,6 +147,8 @@ jarvis --root <project_root> replay --run-id <run_id>
 jarvis --root <project_root> trace --run-id <run_id>
 jarvis --root <project_root> inspect --run-id <run_id>
 jarvis --root <project_root> compare --run-a <run_id> --run-b <run_id>
+jarvis --root <project_root> audit-run --run-id <run_id>
+jarvis --root <project_root> audit-all [--limit 50] [--include-passed]
 jarvis --root <project_root> memory-query --limit 20 [--domain generic] [--status SUCCESS] [--contains text]
 jarvis --root <project_root> memory-search --query "<text>" [--limit 10] [--domain generic] [--status SUCCESS]
 jarvis --root <project_root> memory-semantic-search --query "<text>" [--limit 10] [--domain generic] [--status SUCCESS] [--min-score 0.0]
@@ -216,6 +218,14 @@ jarvis --root <project_root> queue-work [--max-jobs 10] [--worker-id worker-1]
   - `jarvis --root <project_root> trace --run-id <run_id>`
   - `jarvis --root <project_root> inspect --run-id <run_id>` (consolidated run diagnostics)
   - `jarvis --root <project_root> compare --run-a <run_id> --run-b <run_id>` (cross-run diff)
+
+## Run Audit (Current)
+
+- `audit-run` validates one run:
+  - required run files exist
+  - evidence bundle schema is valid
+  - artifact files exist and SHA256 matches evidence references
+- `audit-all` scans multiple runs and returns aggregate pass/fail counts.
 
 ## Queue Runner (Current)
 

@@ -33,6 +33,7 @@
   - Run trace v1: per-stage timeline persisted per run
   - Run inspect command: consolidated diagnostics view with trace timings + execution/research/truth overview
   - Run compare command: cross-run diff for status/hashes/metrics/artifacts
+  - Run audit commands: `audit-run` and `audit-all` for file/hash/schema integrity validation
   - Queue runner v1: submit/list/get/work with retry-at-queue-level
   - Queue stats API/CLI (`queue-stats`) with retry/dead-failed counters
 

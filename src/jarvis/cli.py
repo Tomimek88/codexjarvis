@@ -53,6 +53,19 @@ def build_parser() -> argparse.ArgumentParser:
     compare_parser.add_argument("--run-a", type=str, required=True)
     compare_parser.add_argument("--run-b", type=str, required=True)
 
+    audit_run_parser = subparsers.add_parser(
+        "audit-run",
+        help="Audit one run for file/hash integrity.",
+    )
+    audit_run_parser.add_argument("--run-id", type=str, required=True)
+
+    audit_all_parser = subparsers.add_parser(
+        "audit-all",
+        help="Audit multiple runs and report integrity issues.",
+    )
+    audit_all_parser.add_argument("--limit", type=int, default=50)
+    audit_all_parser.add_argument("--include-passed", action="store_true")
+
     mem_query_parser = subparsers.add_parser(
         "memory-query",
         help="Query indexed run metadata from SQLite memory store.",
@@ -173,6 +186,10 @@ def main(argv: list[str] | None = None) -> int:
             payload = engine.inspect(args.run_id)
         elif args.command == "compare":
             payload = engine.compare_runs(args.run_a, args.run_b)
+        elif args.command == "audit-run":
+            payload = engine.audit_run(args.run_id)
+        elif args.command == "audit-all":
+            payload = engine.audit_all(limit=args.limit, include_passed=bool(args.include_passed))
         elif args.command == "memory-query":
             payload = engine.memory_query(
                 limit=args.limit,
