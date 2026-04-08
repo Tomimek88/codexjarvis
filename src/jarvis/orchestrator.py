@@ -1481,13 +1481,16 @@ class JarvisEngine:
                     }
                 )
 
-            recovered_running = self.queue_recover_running(
-                limit=200,
-                max_age_sec=600,
-                force_requeue=False,
-                reset_attempts=False,
-            )
-            if int(recovered_running.get("stale_count", 0)) > 0:
+            stale_before = snapshot_before.get("queue_stale_running", {})
+            stale_count_before = int(stale_before.get("stale_count", 0))
+            stale_age_sec = int(stale_before.get("max_age_sec", 600))
+            if stale_count_before > 0:
+                recovered_running = self.queue_recover_running(
+                    limit=0,
+                    max_age_sec=stale_age_sec,
+                    force_requeue=False,
+                    reset_attempts=False,
+                )
                 fix_actions.append(
                     {
                         "action": "queue_recover_running",
@@ -1527,6 +1530,7 @@ class JarvisEngine:
             "health": snapshot["health"],
             "cache_verify": snapshot["cache_verify"],
             "queue_stats": snapshot["queue_stats"],
+            "queue_stale_running": snapshot["queue_stale_running"],
             "runs_stats": snapshot["runs_stats"],
             "audit_summary": snapshot["audit_summary"],
         }
@@ -1543,12 +1547,14 @@ class JarvisEngine:
         cache = self.cache_verify(limit=200)
         queue_payload = self.queue_stats()
         queue_stats = queue_payload.get("stats", {}) if isinstance(queue_payload, dict) else {}
+        queue_stale_running = self.queue_stale_running(limit=200, max_age_sec=600)
         runs = self.runs_stats(limit=200)
         audit = self.audit_all(limit=50, include_passed=False)
         return {
             "health": health,
             "cache_verify": cache,
             "queue_stats": queue_stats,
+            "queue_stale_running": queue_stale_running,
             "runs_stats": runs,
             "audit_summary": {
                 "scanned_count": int(audit.get("scanned_count", 0)),
@@ -1625,11 +1631,14 @@ class JarvisEngine:
         health = snapshot.get("health", {})
         cache = snapshot.get("cache_verify", {})
         queue_stats = snapshot.get("queue_stats", {})
+        queue_stale_running = snapshot.get("queue_stale_running", {})
         audit_summary = snapshot.get("audit_summary", {})
         if str(health.get("status", "")).lower() != "ok":
             warnings.append("runtime_health_degraded")
         if int(cache.get("invalid_count", 0)) > 0:
             warnings.append("cache_invalid_entries_present")
+        if int(queue_stale_running.get("stale_count", 0)) > 0:
+            warnings.append("queue_stale_running_jobs_present")
         if int(queue_stats.get("dead_failed_count", 0)) > 0:
             warnings.append("queue_dead_failed_jobs_present")
         if int(audit_summary.get("failed_count", 0)) > 0:
@@ -2055,6 +2064,17 @@ class JarvisEngine:
             "stale_count": out.get("stale_count", 0),
             "recovered_count": out.get("recovered_count", 0),
             "marked_failed_count": out.get("marked_failed_count", 0),
+            "jobs": out.get("jobs", []),
+        }
+
+    def queue_stale_running(self, *, limit: int = 20, max_age_sec: int = 300) -> dict[str, Any]:
+        out = self.queue.stale_running(limit=limit, max_age_sec=max_age_sec)
+        return {
+            "status": "ok",
+            "requested_limit": out.get("requested_limit", 0),
+            "max_age_sec": out.get("max_age_sec", 0),
+            "scanned_running_count": out.get("scanned_running_count", 0),
+            "stale_count": out.get("stale_count", 0),
             "jobs": out.get("jobs", []),
         }
 

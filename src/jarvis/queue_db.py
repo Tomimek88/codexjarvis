@@ -495,6 +495,67 @@ class QueueStore:
             "jobs": jobs,
         }
 
+    def stale_running(
+        self,
+        *,
+        limit: int = 20,
+        max_age_sec: int = 300,
+    ) -> dict[str, Any]:
+        self.ensure_schema()
+        safe_age_sec = max(1, min(int(max_age_sec), 31_536_000))
+        safe_limit = max(1, min(int(limit), 10000)) if int(limit) > 0 else 0
+        now = datetime.now(timezone.utc)
+
+        con = self._connect()
+        try:
+            if safe_limit > 0:
+                rows = con.execute(
+                    """
+                    SELECT *
+                    FROM jobs
+                    WHERE status = 'RUNNING'
+                    ORDER BY started_at_utc ASC, job_id ASC
+                    LIMIT ?
+                    """,
+                    (safe_limit,),
+                ).fetchall()
+            else:
+                rows = con.execute(
+                    """
+                    SELECT *
+                    FROM jobs
+                    WHERE status = 'RUNNING'
+                    ORDER BY started_at_utc ASC, job_id ASC
+                    """
+                ).fetchall()
+        finally:
+            con.close()
+
+        stale_jobs: list[dict[str, Any]] = []
+        for row in rows:
+            started_text = str(row["started_at_utc"] or "")
+            started_at = _parse_iso_utc(started_text) if started_text else None
+            age_sec = None if started_at is None else max(0.0, (now - started_at).total_seconds())
+            if age_sec is None or age_sec >= float(safe_age_sec):
+                stale_jobs.append(
+                    {
+                        "job_id": str(row["job_id"]),
+                        "task_id": str(row["task_id"]),
+                        "attempts": int(row["attempts"]),
+                        "max_attempts": int(row["max_attempts"]),
+                        "started_at_utc": started_text,
+                        "age_sec": None if age_sec is None else round(float(age_sec), 6),
+                    }
+                )
+
+        return {
+            "requested_limit": safe_limit,
+            "max_age_sec": safe_age_sec,
+            "scanned_running_count": len(rows),
+            "stale_count": len(stale_jobs),
+            "jobs": stale_jobs,
+        }
+
     def _write_result(self, job_id: str, payload: dict[str, Any]) -> str:
         self.results_dir.mkdir(parents=True, exist_ok=True)
         path = self.results_dir / f"{job_id}.json"

@@ -247,6 +247,7 @@ jarvis --root <project_root> queue-work [--max-jobs 10] [--worker-id worker-1]
 ## Doctor Diagnostics (Current)
 
 - `doctor` returns one consolidated health snapshot (runtime, cache, queue, run integrity).
+- `doctor` includes `queue_stale_running` diagnostics for stale `RUNNING` jobs.
 - `doctor --fix` attempts safe auto-remediation for common problems:
   - backfills missing legacy run files (`execution_manifest.json`, `trace.json`)
   - rebuilds cache index when invalid entries are detected

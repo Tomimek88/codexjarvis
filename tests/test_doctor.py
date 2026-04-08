@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from jarvis.orchestrator import JarvisEngine
@@ -39,6 +40,7 @@ class DoctorTests(unittest.TestCase):
             self.assertIn("health", doctor)
             self.assertIn("cache_verify", doctor)
             self.assertIn("queue_stats", doctor)
+            self.assertIn("queue_stale_running", doctor)
             self.assertIn("runs_stats", doctor)
             self.assertIn("audit_summary", doctor)
 
@@ -94,24 +96,45 @@ class DoctorTests(unittest.TestCase):
             self.assertFalse(failed_job["requeued"])
             self.assertEqual(failed_job["job"]["status"], "FAILED")
 
+            stale_task = _task("task-doctor-0005")
+            stale_submitted = engine.queue_submit(stale_task, dry_run=False, max_attempts=2)
+            stale_job_id = stale_submitted["job"]["job_id"]
+            claimed = engine.queue.claim_next_job("worker-stale")
+            self.assertIsNotNone(claimed)
+            stale_started = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+            con = engine.queue._connect()
+            try:
+                con.execute(
+                    "UPDATE jobs SET started_at_utc = ? WHERE job_id = ?",
+                    (stale_started, stale_job_id),
+                )
+                con.commit()
+            finally:
+                con.close()
+
             before = engine.doctor()
             self.assertEqual(before["overall"], "warning")
             self.assertIn("run_integrity_failures_present", before["warnings"])
             self.assertIn("cache_invalid_entries_present", before["warnings"])
             self.assertIn("queue_dead_failed_jobs_present", before["warnings"])
+            self.assertIn("queue_stale_running_jobs_present", before["warnings"])
+            self.assertGreaterEqual(int(before["queue_stale_running"]["stale_count"]), 1)
 
             fixed = engine.doctor(fix=True)
             self.assertTrue(bool(fixed.get("fix_requested")))
             self.assertEqual(fixed["cache_verify"]["invalid_count"], 0)
             self.assertEqual(fixed["queue_stats"]["dead_failed_count"], 0)
+            self.assertEqual(int(fixed["queue_stale_running"]["stale_count"]), 0)
             self.assertEqual(fixed["audit_summary"]["failed_count"], 0)
-            self.assertGreaterEqual(int(fixed.get("pre_fix_warning_count", 0)), 3)
+            self.assertGreaterEqual(int(fixed.get("pre_fix_warning_count", 0)), 4)
             self.assertNotIn("cache_invalid_entries_present", fixed["warnings"])
             self.assertNotIn("queue_dead_failed_jobs_present", fixed["warnings"])
+            self.assertNotIn("queue_stale_running_jobs_present", fixed["warnings"])
             self.assertNotIn("run_integrity_failures_present", fixed["warnings"])
             actions = [str(item.get("action", "")) for item in fixed.get("fix_actions", [])]
             self.assertIn("runs_migrate_legacy", actions)
             self.assertIn("repair_runtime_artifact_hashes", actions)
+            self.assertIn("queue_recover_running", actions)
             self.assertIn("cache_rebuild", actions)
             self.assertIn("queue_requeue_failed", actions)
 
