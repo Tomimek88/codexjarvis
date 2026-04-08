@@ -154,6 +154,7 @@ jarvis --root <project_root> compare --run-a <run_id> --run-b <run_id>
 jarvis --root <project_root> report --run-id <run_id>
 jarvis --root <project_root> export-run --run-id <run_id>
 jarvis --root <project_root> import-run --zip-file <path.zip> [--skip-memory-index] [--skip-cache-link] [--overwrite]
+jarvis --root <project_root> import-runs-dir --zips-dir <dir> [--pattern *.zip] [--max-files 0] [--non-recursive] [--stop-on-error] [--skip-memory-index] [--skip-cache-link] [--overwrite]
 jarvis --root <project_root> audit-run --run-id <run_id>
 jarvis --root <project_root> audit-all [--limit 50] [--include-passed]
 jarvis --root <project_root> runs-list [--limit 20] [--status SUCCESS] [--domain generic] [--contains text]
@@ -271,6 +272,7 @@ jarvis --root <project_root> queue-work [--max-jobs 10] [--worker-id worker-1]
 - `export-run` creates a ZIP snapshot of `data/runs/<run_id>` into `data/exports/`.
 - Useful for portability between machines and offline archive handoff.
 - `import-run` restores an exported run ZIP into local `data/runs/` and can auto-index memory/cache.
+- `import-runs-dir` batch-imports multiple run ZIPs from a folder.
 
 ## Queue Runner (Current)
 

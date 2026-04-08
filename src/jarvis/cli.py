@@ -96,6 +96,19 @@ def build_parser() -> argparse.ArgumentParser:
     import_parser.add_argument("--skip-cache-link", action="store_true")
     import_parser.add_argument("--overwrite", action="store_true")
 
+    import_dir_parser = subparsers.add_parser(
+        "import-runs-dir",
+        help="Import multiple run ZIP archives from a directory.",
+    )
+    import_dir_parser.add_argument("--zips-dir", type=Path, required=True)
+    import_dir_parser.add_argument("--pattern", type=str, default="*.zip")
+    import_dir_parser.add_argument("--max-files", type=int, default=0)
+    import_dir_parser.add_argument("--non-recursive", action="store_true")
+    import_dir_parser.add_argument("--stop-on-error", action="store_true")
+    import_dir_parser.add_argument("--skip-memory-index", action="store_true")
+    import_dir_parser.add_argument("--skip-cache-link", action="store_true")
+    import_dir_parser.add_argument("--overwrite", action="store_true")
+
     report_parser = subparsers.add_parser(
         "report",
         help="Generate run report files (JSON + Markdown).",
@@ -297,6 +310,17 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "import-run":
             payload = engine.import_run(
                 args.zip_file.resolve(),
+                index_memory=not bool(args.skip_memory_index),
+                link_cache=not bool(args.skip_cache_link),
+                overwrite=bool(args.overwrite),
+            )
+        elif args.command == "import-runs-dir":
+            payload = engine.import_runs_dir(
+                args.zips_dir.resolve(),
+                pattern=args.pattern,
+                recursive=not bool(args.non_recursive),
+                max_files=args.max_files,
+                continue_on_error=not bool(args.stop_on_error),
                 index_memory=not bool(args.skip_memory_index),
                 link_cache=not bool(args.skip_cache_link),
                 overwrite=bool(args.overwrite),

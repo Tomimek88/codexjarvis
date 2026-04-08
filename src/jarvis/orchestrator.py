@@ -1510,6 +1510,85 @@ class JarvisEngine:
             "overwrite": bool(overwrite),
         }
 
+    def import_runs_dir(
+        self,
+        zips_dir: Path,
+        *,
+        pattern: str = "*.zip",
+        recursive: bool = True,
+        max_files: int = 0,
+        continue_on_error: bool = True,
+        index_memory: bool = True,
+        link_cache: bool = True,
+        overwrite: bool = False,
+    ) -> dict[str, Any]:
+        directory = zips_dir.resolve()
+        if not directory.exists() or not directory.is_dir():
+            raise ValidationError(f"zips_dir '{directory}' does not exist or is not a directory.")
+
+        safe_pattern = pattern.strip() if isinstance(pattern, str) and pattern.strip() else "*.zip"
+        discovered = list(directory.rglob(safe_pattern)) if recursive else list(directory.glob(safe_pattern))
+        files = sorted([path for path in discovered if path.is_file()], key=lambda p: str(p).lower())
+        discovered_count = len(files)
+        if max_files > 0:
+            files = files[: max(1, min(int(max_files), 100000))]
+        selected_count = len(files)
+
+        results: list[dict[str, Any]] = []
+        imported_count = 0
+        failed_count = 0
+        stopped_early = False
+
+        for zip_path in files:
+            rel_path = _as_project_relative(zip_path, self.project_root)
+            try:
+                out = self.import_run(
+                    zip_path,
+                    index_memory=index_memory,
+                    link_cache=link_cache,
+                    overwrite=overwrite,
+                )
+                imported_count += 1
+                results.append(
+                    {
+                        "zip_file": rel_path,
+                        "ok": True,
+                        "run_id": str(out.get("run_id", "")),
+                        "files_imported": int(out.get("files_imported", 0)),
+                        "error": "",
+                    }
+                )
+            except Exception as exc:
+                failed_count += 1
+                results.append(
+                    {
+                        "zip_file": rel_path,
+                        "ok": False,
+                        "run_id": "",
+                        "files_imported": 0,
+                        "error": f"{type(exc).__name__}: {exc}",
+                    }
+                )
+                if not continue_on_error:
+                    stopped_early = True
+                    break
+
+        processed_count = len(results)
+        remaining_count = max(0, selected_count - processed_count)
+        return {
+            "status": "ok",
+            "discovered_count": discovered_count,
+            "selected_count": selected_count,
+            "processed_count": processed_count,
+            "imported_count": imported_count,
+            "failed_count": failed_count,
+            "stopped_early": stopped_early,
+            "remaining_count": remaining_count,
+            "pattern": safe_pattern,
+            "recursive": bool(recursive),
+            "results": results,
+        }
+
     def memory_query(
         self,
         *,

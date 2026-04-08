@@ -43,6 +43,7 @@
   - Task validation commands: `task-validate` and `task-validate-dir`
   - Run export command: ZIP bundle generation for run portability (`export-run`)
   - Run import command: restore exported ZIP runs with optional memory/cache linking (`import-run`)
+  - Batch run-import command: `import-runs-dir`
   - Queue runner v1: submit/list/get/work with retry-at-queue-level
   - Queue stats API/CLI (`queue-stats`) with retry/dead-failed counters
   - Queue recovery command: `queue-requeue-failed`

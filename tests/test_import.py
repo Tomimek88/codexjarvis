@@ -68,6 +68,53 @@ class ImportTests(unittest.TestCase):
             self.assertEqual(second["status"], "ok")
             self.assertTrue(second["overwrite"])
 
+    def test_import_runs_dir_multiple_archives(self) -> None:
+        with tempfile.TemporaryDirectory() as src_tmp, tempfile.TemporaryDirectory() as dst_tmp:
+            src_root = Path(src_tmp)
+            dst_root = Path(dst_tmp)
+
+            src_engine = JarvisEngine(src_root)
+            out1 = src_engine.run(_task("task-import-0101"), dry_run=False)
+            out2 = src_engine.run(_task("task-import-0102"), dry_run=False)
+            zip1 = src_root / src_engine.export_run(out1["run_id"])["zip_path"]
+            zip2 = src_root / src_engine.export_run(out2["run_id"])["zip_path"]
+
+            bundle_dir = src_root / "bundle"
+            bundle_dir.mkdir(parents=True, exist_ok=True)
+            (bundle_dir / "a.zip").write_bytes(zip1.read_bytes())
+            (bundle_dir / "b.zip").write_bytes(zip2.read_bytes())
+
+            dst_engine = JarvisEngine(dst_root)
+            imported = dst_engine.import_runs_dir(bundle_dir)
+            self.assertEqual(imported["status"], "ok")
+            self.assertEqual(imported["selected_count"], 2)
+            self.assertEqual(imported["imported_count"], 2)
+            self.assertEqual(imported["failed_count"], 0)
+
+            self.assertEqual(dst_engine.replay(out1["run_id"])["status"], "ok")
+            self.assertEqual(dst_engine.replay(out2["run_id"])["status"], "ok")
+
+    def test_import_runs_dir_stop_on_error(self) -> None:
+        with tempfile.TemporaryDirectory() as src_tmp, tempfile.TemporaryDirectory() as dst_tmp:
+            src_root = Path(src_tmp)
+            dst_root = Path(dst_tmp)
+            src_engine = JarvisEngine(src_root)
+            out = src_engine.run(_task("task-import-0201"), dry_run=False)
+            good_zip = src_root / src_engine.export_run(out["run_id"])["zip_path"]
+
+            bundle_dir = src_root / "bundle"
+            bundle_dir.mkdir(parents=True, exist_ok=True)
+            (bundle_dir / "001_bad.zip").write_text("not a zip", encoding="utf-8")
+            (bundle_dir / "002_good.zip").write_bytes(good_zip.read_bytes())
+
+            dst_engine = JarvisEngine(dst_root)
+            imported = dst_engine.import_runs_dir(bundle_dir, continue_on_error=False)
+            self.assertEqual(imported["status"], "ok")
+            self.assertEqual(imported["processed_count"], 1)
+            self.assertEqual(imported["imported_count"], 0)
+            self.assertEqual(imported["failed_count"], 1)
+            self.assertTrue(imported["stopped_early"])
+
 
 if __name__ == "__main__":
     unittest.main()
