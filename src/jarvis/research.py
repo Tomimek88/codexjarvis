@@ -58,9 +58,10 @@ def collect_research_artifacts(
             "sha256": "",
             "snapshot_path": f"data/runs/{run_id}/{source_rel_path}",
             "preview": "",
+            "provenance": {},
         }
         try:
-            content_bytes, kind, mime_type = _load_source(
+            content_bytes, kind, mime_type, provenance = _load_source(
                 uri=uri,
                 project_root=project_root,
                 allow_internet=allow_internet,
@@ -80,6 +81,7 @@ def collect_research_artifacts(
             source_record["bytes"] = len(content_text.encode("utf-8"))
             source_record["sha256"] = sha256_bytes(content_text.encode("utf-8"))
             source_record["preview"] = content_text[:500]
+            source_record["provenance"] = provenance
 
             extra_text_files[source_rel_path] = content_text
             artifact_candidates.append((source_rel_path, "raw"))
@@ -118,14 +120,14 @@ def _load_source(
     uri: str,
     project_root: Path,
     allow_internet: bool,
-) -> tuple[bytes, str, str]:
+) -> tuple[bytes, str, str, dict[str, Any]]:
     lowered = uri.lower()
     if lowered.startswith("local://"):
         raw_path = uri[len("local://") :]
         path = _resolve_local_path(raw_path, project_root)
         content = path.read_bytes()
         mime_type = mimetypes.guess_type(str(path))[0] or "text/plain"
-        return content, "local_file", mime_type
+        return content, "local_file", mime_type, _build_local_provenance(path)
 
     if lowered.startswith("http://") or lowered.startswith("https://"):
         if not allow_internet:
@@ -141,14 +143,22 @@ def _load_source(
             with urllib.request.urlopen(req, timeout=12) as resp:
                 body = resp.read()
                 mime_type = resp.headers.get_content_type() or "application/octet-stream"
-            return body, "web_url", mime_type
+                metadata = {
+                    "retrieval_method": "http_get",
+                    "status_code": int(resp.getcode() or 0),
+                    "final_url": str(resp.geturl() or uri),
+                    "content_type": mime_type,
+                    "content_length_header": str(resp.headers.get("Content-Length", "")),
+                    "fetched_at_utc": datetime.now(timezone.utc).isoformat(),
+                }
+            return body, "web_url", mime_type, metadata
         except urllib.error.URLError as exc:
             raise ValueError(f"Failed fetching URL '{uri}': {exc}") from exc
 
     path = _resolve_local_path(uri, project_root)
     content = path.read_bytes()
     mime_type = mimetypes.guess_type(str(path))[0] or "text/plain"
-    return content, "local_file", mime_type
+    return content, "local_file", mime_type, _build_local_provenance(path)
 
 
 def _resolve_local_path(raw_path: str, project_root: Path) -> Path:
@@ -235,3 +245,14 @@ def _clip(text: str, max_chars: int) -> str:
     if len(text) <= max_chars:
         return text
     return text[:max_chars]
+
+
+def _build_local_provenance(path: Path) -> dict[str, Any]:
+    stat = path.stat()
+    return {
+        "retrieval_method": "filesystem",
+        "resolved_path": str(path),
+        "size_bytes_raw": int(stat.st_size),
+        "modified_at_utc": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
+        "fetched_at_utc": datetime.now(timezone.utc).isoformat(),
+    }

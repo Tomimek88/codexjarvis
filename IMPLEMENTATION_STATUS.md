@@ -26,6 +26,7 @@
   - Truth Layer v1.1: richer evidence ref operators (`contains`, `regex`, metric equality/existence)
   - Research Layer v1: source collection + hashed source snapshots + per-run manifest
   - Structured source extraction: JSON pretty-print + CSV/TSV tabular preview
+  - Source provenance metadata (filesystem/http retrieval details) in research manifest
   - Execution policy v1: timeout + retry control with execution manifest
   - Run trace v1: per-stage timeline persisted per run
   - Queue runner v1: submit/list/get/work with retry-at-queue-level

@@ -191,6 +191,8 @@ jarvis --root <project_root> queue-work [--max-jobs 10] [--worker-id worker-1]
 - Structured local sources are normalized for reasoning:
   - `.json` -> pretty JSON text
   - `.csv` / `.tsv` -> tabular preview (header + sample rows)
+- Every source manifest entry now includes `provenance` metadata
+  (`retrieval_method`, resolved path or final URL, timestamps, size/status where available).
 - URL fetch is best-effort and may fail if network is unavailable; failures are recorded in research manifest.
 
 ## Execution + Trace (Current)

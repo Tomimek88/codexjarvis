@@ -36,6 +36,9 @@ class ResearchTests(unittest.TestCase):
             self.assertIn("research/sources_manifest.json", extra_json)
             self.assertIn("research/src_001.txt", extra_text)
             self.assertIn(("research/src_001.txt", "raw"), artifacts)
+            source = bundle["sources"][0]
+            self.assertEqual(source["provenance"]["retrieval_method"], "filesystem")
+            self.assertEqual(Path(source["provenance"]["resolved_path"]).name, "note.txt")
 
     def test_collect_structured_sources_with_extraction_modes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -66,6 +69,9 @@ class ResearchTests(unittest.TestCase):
             self.assertIn("tabular_preview", modes)
             self.assertIn('"alpha": 1', extra_text["research/src_001.txt"])
             self.assertIn("table_preview:", extra_text["research/src_002.txt"])
+            for item in bundle["sources"]:
+                self.assertTrue(isinstance(item.get("provenance", {}), dict))
+                self.assertTrue(bool(item["provenance"].get("fetched_at_utc", "")))
 
     def test_orchestrator_persists_research_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
