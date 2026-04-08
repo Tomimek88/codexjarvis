@@ -141,7 +141,7 @@ docker compose run --rm jarvis python -m jarvis run --root /app --task-file /app
 
 ```bash
 jarvis --root <project_root> health
-jarvis --root <project_root> doctor [--fix] [--queue-prune] [--queue-prune-limit 200] [--queue-prune-older-than-sec 86400] [--queue-prune-delete-results] [--queue-clean-results] [--queue-clean-results-limit 0]
+jarvis --root <project_root> doctor [--fix] [--queue-prune] [--queue-prune-limit 200] [--queue-prune-older-than-sec 86400] [--queue-prune-delete-results] [--queue-clean-results] [--queue-clean-results-limit 0] [--memory-clean] [--memory-clean-limit 0]
 jarvis --root <project_root> dry-run --task-file <task.json>
 jarvis --root <project_root> run --task-file <task.json>
 jarvis --root <project_root> batch-run --tasks-dir <dir> [--pattern *.json] [--max-tasks 0] [--dry-run] [--non-recursive] [--stop-on-error]
@@ -167,6 +167,8 @@ jarvis --root <project_root> memory-search --query "<text>" [--limit 10] [--doma
 jarvis --root <project_root> memory-semantic-search --query "<text>" [--limit 10] [--domain generic] [--status SUCCESS] [--min-score 0.0]
 jarvis --root <project_root> memory-hybrid-search --query "<text>" [--limit 10] [--lexical-weight 0.4] [--semantic-weight 0.6] [--min-combined-score 0.0]
 jarvis --root <project_root> memory-get --run-id <run_id>
+jarvis --root <project_root> memory-audit [--limit 0]
+jarvis --root <project_root> memory-clean [--limit 0] [--dry-run]
 jarvis --root <project_root> memory-index --run-id <run_id>
 jarvis --root <project_root> memory-reindex-all [--limit 0] [--include-failed]
 jarvis --root <project_root> queue-submit --task-file <task.json> [--dry-run] [--max-attempts 1]
@@ -186,6 +188,7 @@ jarvis --root <project_root> queue-work [--max-jobs 10] [--worker-id worker-1]
 Tip: `queue-work --max-jobs 0` processes jobs until queue becomes idle (bounded by internal safety cap).
 Tip: use `queue-prune --dry-run` to preview cleanup without deleting jobs/files.
 Tip: run `queue-clean-results --dry-run` to preview orphan result-file cleanup.
+Tip: run `memory-clean --dry-run` to preview stale memory-index cleanup.
 
 ## Memory Layer (Current)
 
@@ -195,6 +198,8 @@ Tip: run `queue-clean-results --dry-run` to preview orphan result-file cleanup.
 - `memory-search` returns ranked runs by memo/objective token match.
 - `memory-semantic-search` returns cosine-ranked runs from local sparse vectors.
 - `memory-hybrid-search` combines lexical + semantic ranking into one score.
+- `memory-audit` detects stale memory entries that point to missing run files.
+- `memory-clean` removes stale memory entries (supports preview with `--dry-run`).
 - `memory-reindex-all` backfills memory DB entries from existing `data/runs/*`.
 - Obsidian can still be used as human notes, but this SQLite DB is the source of truth for deterministic runtime memory.
 

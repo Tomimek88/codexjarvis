@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
 
+from jarvis.contracts import ValidationError
 from jarvis.orchestrator import JarvisEngine
 
 
@@ -119,6 +121,47 @@ class MemorySearchTests(unittest.TestCase):
 
             after = engine2.memory_get(run_id)
             self.assertEqual(after["status"], "ok")
+
+    def test_memory_audit_and_clean_remove_stale_entries(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            engine = JarvisEngine(root)
+            task = {
+                "task_id": "task-ms-0005",
+                "objective": "Create baseline run for memory cleanup.",
+                "domain": "generic",
+                "requires_computation": True,
+                "allow_internet_research": True,
+                "strict_no_guessing": True,
+                "parameters": {"a": 9, "b": 4, "c": 2, "seed": 42},
+            }
+            out = engine.run(task, dry_run=False)
+            self.assertEqual(out["status"], "completed")
+            run_id = out["run_id"]
+
+            run_dir = root / "data" / "runs" / run_id
+            shutil.rmtree(run_dir)
+
+            audit_before = engine.memory_audit()
+            self.assertEqual(audit_before["status"], "ok")
+            self.assertGreaterEqual(int(audit_before["stale_count"]), 1)
+            stale_ids = [str(item.get("run_id", "")) for item in audit_before.get("runs", [])]
+            self.assertIn(run_id, stale_ids)
+
+            preview = engine.memory_clean(dry_run=True)
+            self.assertEqual(preview["status"], "ok")
+            self.assertGreaterEqual(int(preview["would_delete_count"]), 1)
+            self.assertEqual(int(preview["deleted_count"]), 0)
+            self.assertEqual(engine.memory_get(run_id)["status"], "ok")
+
+            cleaned = engine.memory_clean(dry_run=False)
+            self.assertEqual(cleaned["status"], "ok")
+            self.assertGreaterEqual(int(cleaned["deleted_count"]), 1)
+            with self.assertRaises(ValidationError):
+                engine.memory_get(run_id)
+
+            audit_after = engine.memory_audit()
+            self.assertEqual(int(audit_after["stale_count"]), 0)
 
 
 if __name__ == "__main__":

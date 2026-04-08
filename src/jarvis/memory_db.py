@@ -538,6 +538,114 @@ class MemoryStore:
         record["memo_text"] = self._get_memo_text(run_id)
         return record
 
+    def audit_index(self, *, limit: int = 0) -> dict[str, Any]:
+        self.ensure_schema()
+        safe_limit = max(1, min(int(limit), 100000)) if int(limit) > 0 else 0
+
+        con = self._connect()
+        try:
+            total_row = con.execute("SELECT COUNT(*) AS count FROM runs").fetchone()
+            total_indexed_runs = int(total_row["count"]) if total_row is not None else 0
+
+            sql = "SELECT run_id, summary_path, evidence_path, timestamp_utc FROM runs ORDER BY timestamp_utc DESC"
+            params: list[Any] = []
+            if safe_limit > 0:
+                sql += " LIMIT ?"
+                params.append(safe_limit)
+            rows = con.execute(sql, tuple(params)).fetchall()
+        finally:
+            con.close()
+
+        root = self.project_root.resolve()
+        stale_rows: list[dict[str, Any]] = []
+        for row in rows:
+            run_id = str(row["run_id"])
+            run_dir_rel = f"data/runs/{run_id}"
+            run_dir_abs = (self.project_root / run_dir_rel).resolve()
+            summary_rel = _normalize_rel_path(str(row["summary_path"] or f"data/runs/{run_id}/summary.json"))
+            evidence_rel = _normalize_rel_path(str(row["evidence_path"] or f"data/runs/{run_id}/evidence_bundle.json"))
+            meta_rel = f"data/runs/{run_id}/meta.json"
+
+            issues: list[str] = []
+            if not _is_within_root(run_dir_abs, root) or not run_dir_abs.exists() or not run_dir_abs.is_dir():
+                issues.append("missing_run_dir")
+
+            meta_abs = _resolve_project_path(self.project_root, meta_rel)
+            if meta_abs is None:
+                issues.append("invalid_meta_path")
+            elif not meta_abs.exists():
+                issues.append("missing_meta_file")
+
+            summary_abs = _resolve_project_path(self.project_root, summary_rel)
+            if summary_abs is None:
+                issues.append("invalid_summary_path")
+            elif not summary_abs.exists():
+                issues.append("missing_summary_file")
+
+            evidence_abs = _resolve_project_path(self.project_root, evidence_rel)
+            if evidence_abs is None:
+                issues.append("invalid_evidence_path")
+            elif not evidence_abs.exists():
+                issues.append("missing_evidence_file")
+
+            if len(issues) == 0:
+                continue
+
+            stale_rows.append(
+                {
+                    "run_id": run_id,
+                    "timestamp_utc": str(row["timestamp_utc"] or ""),
+                    "issues": issues,
+                    "run_dir": run_dir_rel,
+                    "meta_path": meta_rel,
+                    "summary_path": summary_rel,
+                    "evidence_path": evidence_rel,
+                }
+            )
+
+        return {
+            "requested_limit": safe_limit,
+            "total_indexed_runs": total_indexed_runs,
+            "scanned_count": len(rows),
+            "stale_count": len(stale_rows),
+            "runs": stale_rows[:500],
+        }
+
+    def clean_stale_runs(self, *, limit: int = 0, dry_run: bool = False) -> dict[str, Any]:
+        preview = self.audit_index(limit=limit)
+        stale_rows = preview.get("runs", [])
+        stale_run_ids = sorted(
+            {
+                str(item.get("run_id", "")).strip()
+                for item in stale_rows
+                if isinstance(item, dict) and str(item.get("run_id", "")).strip()
+            }
+        )
+        deleted_count = 0
+
+        if len(stale_run_ids) > 0 and not dry_run:
+            con = self._connect()
+            try:
+                con.executemany(
+                    "DELETE FROM runs WHERE run_id = ?",
+                    [(run_id,) for run_id in stale_run_ids],
+                )
+                con.commit()
+            finally:
+                con.close()
+            deleted_count = len(stale_run_ids)
+
+        return {
+            "requested_limit": int(preview.get("requested_limit", 0)),
+            "dry_run": bool(dry_run),
+            "total_indexed_runs": int(preview.get("total_indexed_runs", 0)),
+            "scanned_count": int(preview.get("scanned_count", 0)),
+            "stale_count": int(preview.get("stale_count", 0)),
+            "would_delete_count": len(stale_run_ids),
+            "deleted_count": deleted_count,
+            "runs": stale_rows,
+        }
+
     def _get_memo_text(self, run_id: str) -> str:
         con = self._connect()
         try:
@@ -594,3 +702,23 @@ def _cosine_sparse(
     if dot <= 0.0:
         return 0.0
     return dot / (query_norm * doc_norm)
+
+
+def _normalize_rel_path(path: str) -> str:
+    normalized = path.replace("\\", "/").strip()
+    return normalized.lstrip("/")
+
+
+def _resolve_project_path(project_root: Path, rel_path: str) -> Path | None:
+    candidate = (project_root / _normalize_rel_path(rel_path)).resolve()
+    if _is_within_root(candidate, project_root.resolve()):
+        return candidate
+    return None
+
+
+def _is_within_root(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False

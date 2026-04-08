@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import shutil
 import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from jarvis.contracts import ValidationError
 from jarvis.orchestrator import JarvisEngine
 
 
@@ -42,6 +44,7 @@ class DoctorTests(unittest.TestCase):
             self.assertIn("queue_stats", doctor)
             self.assertIn("queue_stale_running", doctor)
             self.assertIn("queue_orphan_results", doctor)
+            self.assertIn("memory_audit", doctor)
             self.assertIn("runs_stats", doctor)
             self.assertIn("audit_summary", doctor)
 
@@ -185,6 +188,31 @@ class DoctorTests(unittest.TestCase):
             self.assertTrue(len(actions) >= 1)
             self.assertGreaterEqual(int(actions[0].get("result", {}).get("deleted_count", 0)), 1)
             self.assertFalse(orphan_file.exists())
+
+    def test_doctor_detects_and_cleans_stale_memory_refs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            engine = JarvisEngine(root)
+            out = engine.run(_task("task-doctor-memory-0001"), dry_run=False)
+            self.assertEqual(out["status"], "completed")
+            run_id = out["run_id"]
+
+            run_dir = root / "data" / "runs" / run_id
+            shutil.rmtree(run_dir)
+
+            before = engine.doctor()
+            self.assertIn("memory_stale_run_refs_present", before["warnings"])
+            self.assertGreaterEqual(int(before["memory_audit"]["stale_count"]), 1)
+
+            fixed = engine.doctor(fix=True)
+            self.assertNotIn("memory_stale_run_refs_present", fixed["warnings"])
+            self.assertEqual(int(fixed["memory_audit"]["stale_count"]), 0)
+            actions = [item for item in fixed.get("fix_actions", []) if item.get("action") == "memory_clean"]
+            self.assertTrue(len(actions) >= 1)
+            self.assertGreaterEqual(int(actions[0].get("result", {}).get("deleted_count", 0)), 1)
+
+            with self.assertRaises(ValidationError):
+                engine.memory_get(run_id)
 
 
 if __name__ == "__main__":

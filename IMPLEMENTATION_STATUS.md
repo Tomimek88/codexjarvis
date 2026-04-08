@@ -59,6 +59,9 @@
   - Queue orphan-result cleanup command: `queue-clean-results` (supports `--dry-run`)
   - Queue cancellation command: `queue-cancel`
   - Queue worker unlimited drain mode: `queue-work --max-jobs 0`
+  - Memory index audit command: `memory-audit`
+  - Memory stale-index cleanup command: `memory-clean` (supports `--dry-run`)
+  - Doctor memory-index stale-reference warning + autofix cleanup integration
 
 ## Current known external blockers on this PC
 

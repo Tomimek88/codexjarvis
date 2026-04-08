@@ -60,6 +60,17 @@ def build_parser() -> argparse.ArgumentParser:
         default=0,
         help="Max number of queue result files to inspect when cleaning orphans (0 = all).",
     )
+    doctor_parser.add_argument(
+        "--memory-clean",
+        action="store_true",
+        help="With --fix, remove stale memory index entries pointing to missing run files.",
+    )
+    doctor_parser.add_argument(
+        "--memory-clean-limit",
+        type=int,
+        default=0,
+        help="Max number of memory rows to inspect during memory cleanup (0 = all).",
+    )
 
     run_parser = subparsers.add_parser("run", help="Run task from task JSON file.")
     run_parser.add_argument("--task-file", type=Path, required=True)
@@ -249,6 +260,19 @@ def build_parser() -> argparse.ArgumentParser:
     )
     mem_get_parser.add_argument("--run-id", type=str, required=True)
 
+    mem_audit_parser = subparsers.add_parser(
+        "memory-audit",
+        help="Audit memory index for stale entries referencing missing run files.",
+    )
+    mem_audit_parser.add_argument("--limit", type=int, default=0)
+
+    mem_clean_parser = subparsers.add_parser(
+        "memory-clean",
+        help="Clean stale memory index entries referencing missing run files.",
+    )
+    mem_clean_parser.add_argument("--limit", type=int, default=0)
+    mem_clean_parser.add_argument("--dry-run", action="store_true")
+
     mem_index_parser = subparsers.add_parser(
         "memory-index",
         help="Index an existing run from data/runs/<run_id> into SQLite memory store.",
@@ -372,6 +396,8 @@ def main(argv: list[str] | None = None) -> int:
                 queue_prune_delete_results=bool(args.queue_prune_delete_results),
                 queue_clean_results=bool(args.queue_clean_results),
                 queue_clean_results_limit=args.queue_clean_results_limit,
+                memory_clean=bool(args.memory_clean),
+                memory_clean_limit=args.memory_clean_limit,
             )
         elif args.command == "run":
             payload = engine.run_from_file(args.task_file.resolve(), dry_run=False)
@@ -483,6 +509,10 @@ def main(argv: list[str] | None = None) -> int:
             )
         elif args.command == "memory-get":
             payload = engine.memory_get(args.run_id)
+        elif args.command == "memory-audit":
+            payload = engine.memory_audit(limit=args.limit)
+        elif args.command == "memory-clean":
+            payload = engine.memory_clean(limit=args.limit, dry_run=bool(args.dry_run))
         elif args.command == "memory-index":
             payload = engine.index_run(args.run_id)
         elif args.command == "memory-reindex-all":
