@@ -1,0 +1,31 @@
+{
+  "task_id": "task-truth-0001",
+  "objective": "Demonstrate truth-layer blocking for unsupported user claims.",
+  "domain": "generic",
+  "requires_computation": true,
+  "allow_internet_research": true,
+  "strict_no_guessing": true,
+  "force_rerun": false,
+  "input_refs": [
+    {
+      "name": "truth-block-smoke",
+      "uri": "local://examples/truth-block"
+    }
+  ],
+  "parameters": {
+    "a": 3,
+    "b": 5,
+    "c": 9,
+    "seed": 42,
+    "claims": [
+      {
+        "claim_id": "c1",
+        "text": "Portfolio guaranteed to beat benchmark in all market regimes.",
+        "evidence_refs": []
+      }
+    ]
+  },
+  "acceptance_criteria": [
+    "Unsupported user claim must be blocked by truth layer."
+  ]
+}

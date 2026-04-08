@@ -9,6 +9,7 @@ This repository now contains a working baseline for:
 - deterministic cache key computation
 - run artifact persistence
 - evidence bundle creation and validation
+- truth-layer claim/evidence validation (unsupported user claims are blocked)
 - replay from stored runs
 - SQLite memory index for prior runs and artifacts
 - bootstrap scripts for local setup
@@ -40,6 +41,7 @@ scripts/
   bootstrap.sh              # Linux/macOS setup
 examples/tasks/
   generic_sum_task.json     # Smoke task
+  generic_truth_block_task.json
   markets_backtest_task.json
 examples/data/markets/
   demo_prices.csv           # Sample close-price series for markets backtest
@@ -86,6 +88,15 @@ $env:PYTHONPATH='C:\Users\Tomino\Desktop\codexjarvis\src'
 .\.venv\Scripts\python.exe -m jarvis --root C:\Users\Tomino\Desktop\codexjarvis run --task-file C:\Users\Tomino\Desktop\codexjarvis\examples\tasks\markets_backtest_task.json
 ```
 
+Truth-layer block example:
+
+```powershell
+$env:PYTHONPATH='C:\Users\Tomino\Desktop\codexjarvis\src'
+.\.venv\Scripts\python.exe -m jarvis --root C:\Users\Tomino\Desktop\codexjarvis run --task-file C:\Users\Tomino\Desktop\codexjarvis\examples\tasks\generic_truth_block_task.json
+```
+
+This should return `status=blocked_by_truth_layer` and message `Nevim, musim to nasimulovat.`.
+
 ## Docker Option
 
 If Docker Desktop is available:
@@ -119,6 +130,14 @@ jarvis --root <project_root> memory-index --run-id <run_id>
 - Indexed data includes core hashes, metrics, summary/evidence paths, and artifact hashes.
 - `memory-query` is the fast operator-facing lookup for replay/reuse decisions.
 - Obsidian can still be used as human notes, but this SQLite DB is the source of truth for deterministic runtime memory.
+
+## Truth Layer (Current)
+
+- Auto metric claims are created from computed metrics and must resolve to evidence refs (`metrics.<key>`).
+- User claims can be supplied in task parameters under `claims`.
+- If any user claim lacks resolvable evidence refs, the run output is blocked with:
+  - `status: blocked_by_truth_layer`
+  - `message: Nevim, musim to nasimulovat.`
 
 ## Evidence-First Guarantee in This Scaffold
 

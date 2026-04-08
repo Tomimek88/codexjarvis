@@ -11,6 +11,12 @@ from .hashing import compute_cache_key, compute_code_hash, sha256_object
 from .memory_db import MemoryStore
 from .run_store import RunStore
 from .simulator import execute_domain_simulation
+from .truth_layer import (
+    build_metric_claims,
+    has_unsupported_user_claims,
+    normalize_user_claims,
+    validate_claims,
+)
 
 
 class JarvisEngine:
@@ -91,12 +97,24 @@ class JarvisEngine:
                 if cached_bundle["status"] == "SUCCESS" and not is_dry_run_bundle:
                     if self.memory.get_run(cached_run_id) is None:
                         self.index_run(cached_run_id)
+                    claim_validation = self._validate_task_claims(task, cached_bundle)
+                    if has_unsupported_user_claims(claim_validation):
+                        return {
+                            "task_id": task["task_id"],
+                            "status": "blocked_by_truth_layer",
+                            "message": FALLBACK_NO_GUESS,
+                            "cache_key": cache_key,
+                            "run_id": cached_run_id,
+                            "evidence_bundle": cached_bundle,
+                            "claim_validation": claim_validation,
+                        }
                     return {
                         "task_id": task["task_id"],
                         "status": "cache_hit",
                         "cache_key": cache_key,
                         "run_id": cached_run_id,
                         "evidence_bundle": cached_bundle,
+                        "claim_validation": claim_validation,
                     }
 
         run_id = self.store.new_run_id()
@@ -228,12 +246,25 @@ class JarvisEngine:
                 artifacts=final_bundle["artifacts"],
             )
 
+        claim_validation = self._validate_task_claims(task, final_bundle)
+        if has_unsupported_user_claims(claim_validation):
+            return {
+                "task_id": task["task_id"],
+                "status": "blocked_by_truth_layer",
+                "message": FALLBACK_NO_GUESS,
+                "cache_key": cache_key,
+                "run_id": run_id,
+                "evidence_bundle": final_bundle,
+                "claim_validation": claim_validation,
+            }
+
         return {
             "task_id": task["task_id"],
             "status": "completed",
             "cache_key": cache_key,
             "run_id": run_id,
             "evidence_bundle": final_bundle,
+            "claim_validation": claim_validation,
         }
 
     def run_from_file(self, task_file: Path, *, dry_run: bool = False) -> dict[str, Any]:
@@ -293,6 +324,15 @@ class JarvisEngine:
             artifacts=evidence["artifacts"],
         )
         return {"status": "ok", "run_id": run_id, "indexed": True}
+
+    def _validate_task_claims(
+        self,
+        task: dict[str, Any],
+        evidence_bundle: dict[str, Any],
+    ) -> dict[str, Any]:
+        auto_claims = build_metric_claims(evidence_bundle.get("metrics", {}))
+        user_claims = normalize_user_claims(task.get("parameters", {}).get("claims"))
+        return validate_claims(claims=auto_claims + user_claims, evidence_bundle=evidence_bundle)
 
 
 def _is_writable(path: Path) -> bool:
