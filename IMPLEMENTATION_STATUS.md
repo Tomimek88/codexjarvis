@@ -9,20 +9,21 @@
 - Phase 1 baseline scaffold implemented:
   - reproducible Python project structure
   - local run storage (`data/runs`, `data/cache`, `data/memory`)
+  - SQLite memory DB (`data/memory/memory.db`) with run + artifact index
   - health checks (`jarvis health`)
   - one-command bootstrap scripts (`scripts/bootstrap.ps1`, `scripts/bootstrap.sh`)
   - smoke scripts (`scripts/smoke.ps1`, `scripts/smoke.sh`)
 - Phase 3 seed implemented:
   - orchestrator loop (validate -> cache check -> compute -> evidence -> persist)
   - replay command (`jarvis replay --run-id`)
+  - memory CLI commands (`memory-query`, `memory-get`, `memory-index`)
   - deterministic cache key according to memory policy fields
 
 ## Current known external blockers on this PC
 
-- Python is not currently available in PATH.
 - Docker CLI is not currently available in PATH.
 
-Because of this, runtime execution/tests could not be executed on this machine yet.
+Python runtime execution and tests are now passing via local venv.
 
 ## Next implementation targets
 
@@ -34,4 +35,4 @@ Because of this, runtime execution/tests could not be executed on this machine y
 2. Add retrieval + source tracking layer (internet/local docs) with provenance records.
 3. Add claim-to-evidence validator (truth layer gate).
 4. Add sandbox resource policies and job queue runner.
-5. Add vector memory indexing and retrieval APIs.
+5. Add vector memory retrieval APIs and semantic indexing pipeline.

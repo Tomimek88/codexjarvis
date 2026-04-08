@@ -33,6 +33,27 @@ def build_parser() -> argparse.ArgumentParser:
 
     replay_parser = subparsers.add_parser("replay", help="Load evidence for an existing run.")
     replay_parser.add_argument("--run-id", type=str, required=True)
+
+    mem_query_parser = subparsers.add_parser(
+        "memory-query",
+        help="Query indexed run metadata from SQLite memory store.",
+    )
+    mem_query_parser.add_argument("--limit", type=int, default=20)
+    mem_query_parser.add_argument("--domain", type=str, required=False)
+    mem_query_parser.add_argument("--status", type=str, required=False)
+    mem_query_parser.add_argument("--contains", type=str, required=False)
+
+    mem_get_parser = subparsers.add_parser(
+        "memory-get",
+        help="Get one indexed run and its artifacts from SQLite memory store.",
+    )
+    mem_get_parser.add_argument("--run-id", type=str, required=True)
+
+    mem_index_parser = subparsers.add_parser(
+        "memory-index",
+        help="Index an existing run from data/runs/<run_id> into SQLite memory store.",
+    )
+    mem_index_parser.add_argument("--run-id", type=str, required=True)
     return parser
 
 
@@ -50,6 +71,17 @@ def main(argv: list[str] | None = None) -> int:
             payload = engine.run_from_file(args.task_file.resolve(), dry_run=True)
         elif args.command == "replay":
             payload = engine.replay(args.run_id)
+        elif args.command == "memory-query":
+            payload = engine.memory_query(
+                limit=args.limit,
+                domain=args.domain,
+                status=args.status,
+                contains=args.contains,
+            )
+        elif args.command == "memory-get":
+            payload = engine.memory_get(args.run_id)
+        elif args.command == "memory-index":
+            payload = engine.index_run(args.run_id)
         else:  # pragma: no cover
             parser.error(f"Unsupported command: {args.command}")
             return 2

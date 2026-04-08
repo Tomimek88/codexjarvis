@@ -8,6 +8,7 @@ from typing import Any
 from .constants import FALLBACK_NO_GUESS
 from .contracts import ValidationError, load_json_file, validate_evidence_bundle, validate_task_request
 from .hashing import compute_cache_key, compute_code_hash, sha256_object
+from .memory_db import MemoryStore
 from .run_store import RunStore
 from .simulator import execute_domain_simulation
 
@@ -18,6 +19,8 @@ class JarvisEngine:
         self.contracts_dir = self.project_root / "contracts"
         self.store = RunStore(project_root)
         self.store.ensure_layout()
+        self.memory = MemoryStore(project_root)
+        self.memory.ensure_schema()
 
     def health(self) -> dict[str, Any]:
         contracts_present = {
@@ -35,6 +38,8 @@ class JarvisEngine:
             "project_root": str(self.project_root),
             "contracts_present": contracts_present,
             "storage_writable": writable,
+            "memory_db_path": str(self.memory.db_path),
+            "memory_db_exists": self.memory.db_path.exists(),
             "toolchain": {
                 "python_version": platform.python_version(),
                 "platform": platform.platform(),
@@ -84,6 +89,8 @@ class JarvisEngine:
                 validate_evidence_bundle(cached_bundle)
                 is_dry_run_bundle = bool(cached_bundle.get("metrics", {}).get("dry_run", False))
                 if cached_bundle["status"] == "SUCCESS" and not is_dry_run_bundle:
+                    if self.memory.get_run(cached_run_id) is None:
+                        self.index_run(cached_run_id)
                     return {
                         "task_id": task["task_id"],
                         "status": "cache_hit",
@@ -199,6 +206,24 @@ class JarvisEngine:
 
         if status == "SUCCESS" and not dry_run:
             self.store.set_cache_entry(cache_key, run_id)
+            self.memory.upsert_run(
+                run_id=run_id,
+                task_id=task["task_id"],
+                domain=task["domain"],
+                objective=task["objective"],
+                cache_key=cache_key,
+                timestamp_utc=run_timestamp,
+                status=status,
+                input_hash=input_hash,
+                params_hash=params_hash,
+                code_hash=code_hash,
+                env_hash=env_hash,
+                seed=seed,
+                summary_path=f"data/runs/{run_id}/summary.json",
+                evidence_path=f"data/runs/{run_id}/evidence_bundle.json",
+                metrics=final_bundle.get("metrics", {}),
+                artifacts=final_bundle["artifacts"],
+            )
 
         return {
             "task_id": task["task_id"],
@@ -219,6 +244,52 @@ class JarvisEngine:
         evidence = self.store.load_evidence(run_id)
         validate_evidence_bundle(evidence)
         return {"status": "ok", "run_id": run_id, "evidence_bundle": evidence}
+
+    def memory_query(
+        self,
+        *,
+        limit: int = 20,
+        domain: str | None = None,
+        status: str | None = None,
+        contains: str | None = None,
+    ) -> dict[str, Any]:
+        runs = self.memory.query_runs(limit=limit, domain=domain, status=status, contains=contains)
+        return {"status": "ok", "count": len(runs), "runs": runs}
+
+    def memory_get(self, run_id: str) -> dict[str, Any]:
+        run = self.memory.get_run(run_id)
+        if run is None:
+            raise ValidationError(f"Run '{run_id}' not found in memory DB.")
+        return {"status": "ok", "run": run}
+
+    def index_run(self, run_id: str) -> dict[str, Any]:
+        run_dir = self.store.run_path(run_id)
+        if not run_dir.exists():
+            raise ValidationError(f"Run '{run_id}' does not exist.")
+
+        meta = load_json_file(run_dir / "meta.json")
+        evidence = load_json_file(run_dir / "evidence_bundle.json")
+        validate_evidence_bundle(evidence)
+
+        self.memory.upsert_run(
+            run_id=run_id,
+            task_id=meta.get("task_id", ""),
+            domain=meta.get("domain", evidence["domain"]),
+            objective=meta.get("objective", ""),
+            cache_key=meta.get("cache_key", ""),
+            timestamp_utc=meta.get("timestamp_utc", evidence["timestamp_utc"]),
+            status=evidence["status"],
+            input_hash=evidence["input_hash"],
+            params_hash=evidence["params_hash"],
+            code_hash=evidence["code_hash"],
+            env_hash=evidence["env_hash"],
+            seed=evidence["seed"],
+            summary_path=f"data/runs/{run_id}/summary.json",
+            evidence_path=f"data/runs/{run_id}/evidence_bundle.json",
+            metrics=evidence.get("metrics", {}),
+            artifacts=evidence["artifacts"],
+        )
+        return {"status": "ok", "run_id": run_id, "indexed": True}
 
 
 def _is_writable(path: Path) -> bool:
