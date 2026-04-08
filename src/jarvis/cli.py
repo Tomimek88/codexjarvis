@@ -144,6 +144,14 @@ def build_parser() -> argparse.ArgumentParser:
     runs_stats_parser.add_argument("--limit", type=int, default=0)
     runs_stats_parser.add_argument("--domain", type=str, required=False)
 
+    runs_migrate_parser = subparsers.add_parser(
+        "runs-migrate-legacy",
+        help="Backfill missing legacy run files (execution_manifest/trace).",
+    )
+    runs_migrate_parser.add_argument("--limit", type=int, default=0)
+    runs_migrate_parser.add_argument("--skip-execution-manifest", action="store_true")
+    runs_migrate_parser.add_argument("--skip-trace", action="store_true")
+
     cache_verify_parser = subparsers.add_parser(
         "cache-verify",
         help="Verify cache index entries against run metadata.",
@@ -340,6 +348,12 @@ def main(argv: list[str] | None = None) -> int:
             )
         elif args.command == "runs-stats":
             payload = engine.runs_stats(limit=args.limit, domain=args.domain)
+        elif args.command == "runs-migrate-legacy":
+            payload = engine.runs_migrate_legacy(
+                limit=args.limit,
+                write_execution_manifest=not bool(args.skip_execution_manifest),
+                write_trace=not bool(args.skip_trace),
+            )
         elif args.command == "cache-verify":
             payload = engine.cache_verify(limit=args.limit)
         elif args.command == "cache-rebuild":

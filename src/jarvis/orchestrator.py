@@ -1184,6 +1184,71 @@ class JarvisEngine:
             },
         }
 
+    def runs_migrate_legacy(
+        self,
+        *,
+        limit: int = 0,
+        write_execution_manifest: bool = True,
+        write_trace: bool = True,
+    ) -> dict[str, Any]:
+        self.store.ensure_layout()
+        run_dirs = [path for path in self.store.runs_dir.iterdir() if path.is_dir()]
+        run_dirs = sorted(run_dirs, key=lambda path: path.name, reverse=True)
+        if limit > 0:
+            run_dirs = run_dirs[: max(1, min(int(limit), 100000))]
+
+        migrated = 0
+        touched_execution = 0
+        touched_trace = 0
+        skipped = 0
+        errors: list[dict[str, str]] = []
+
+        for run_dir in run_dirs:
+            run_id = run_dir.name
+            meta_path = run_dir / "meta.json"
+            evidence_path = run_dir / "evidence_bundle.json"
+            if not meta_path.exists() or not evidence_path.exists():
+                skipped += 1
+                continue
+
+            try:
+                meta = load_json_file(meta_path)
+                evidence = load_json_file(evidence_path)
+                validate_evidence_bundle(evidence)
+            except Exception as exc:
+                skipped += 1
+                errors.append({"run_id": run_id, "error": f"{type(exc).__name__}: {exc}"})
+                continue
+
+            did_touch = False
+            execution_path = run_dir / "execution_manifest.json"
+            if write_execution_manifest and not execution_path.exists():
+                default_execution = _build_legacy_execution_manifest(meta=meta, evidence=evidence)
+                _write_json_file(execution_path, default_execution)
+                touched_execution += 1
+                did_touch = True
+
+            trace_path = run_dir / "trace.json"
+            if write_trace and not trace_path.exists():
+                default_trace = _build_legacy_trace(run_id=run_id, meta=meta, evidence=evidence)
+                _write_json_file(trace_path, default_trace)
+                touched_trace += 1
+                did_touch = True
+
+            if did_touch:
+                migrated += 1
+
+        return {
+            "status": "ok",
+            "scanned_count": len(run_dirs),
+            "migrated_runs": migrated,
+            "execution_manifest_written": touched_execution,
+            "trace_written": touched_trace,
+            "skipped_count": skipped,
+            "error_count": len(errors),
+            "errors": errors[:100],
+        }
+
     def cache_verify(self, *, limit: int = 0) -> dict[str, Any]:
         self.store.ensure_layout()
         index = self.store.load_cache_index()
@@ -2176,3 +2241,65 @@ def _extract_run_ids_from_members(members: list[str]) -> set[str]:
         if run_id:
             run_ids.add(run_id)
     return run_ids
+
+
+def _build_legacy_execution_manifest(*, meta: dict[str, Any], evidence: dict[str, Any]) -> dict[str, Any]:
+    status = str(evidence.get("status", "")).upper()
+    stderr_text = str(evidence.get("logs", {}).get("stderr", "")) if isinstance(evidence.get("logs", {}), dict) else ""
+    if status == "SUCCESS":
+        attempt_status = "SUCCESS"
+        final_status = "SUCCESS"
+        error_text = ""
+    else:
+        attempt_status = "FAILED"
+        final_status = "FAILED"
+        error_text = stderr_text.strip() or "Legacy run imported without execution manifest."
+
+    is_dry = bool(evidence.get("metrics", {}).get("dry_run", False)) if isinstance(evidence.get("metrics", {}), dict) else False
+    return {
+        "policy": {
+            "mode": "dry_run" if is_dry else "legacy",
+            "timeout_sec": None,
+            "max_retries": 0,
+            "retry_delay_sec": 0.0,
+        },
+        "attempts": [
+            {
+                "attempt": 1,
+                "status": attempt_status,
+                "duration_sec": 0.0,
+                "error": error_text,
+            }
+        ],
+        "final_status": final_status,
+        "legacy_migration": {
+            "migrated_at_utc": datetime.now(timezone.utc).isoformat(),
+            "source_timestamp_utc": str(meta.get("timestamp_utc", evidence.get("timestamp_utc", ""))),
+        },
+    }
+
+
+def _build_legacy_trace(*, run_id: str, meta: dict[str, Any], evidence: dict[str, Any]) -> dict[str, Any]:
+    timestamp = str(meta.get("timestamp_utc", evidence.get("timestamp_utc", datetime.now(timezone.utc).isoformat())))
+    run_status = str(evidence.get("status", "UNKNOWN"))
+    return {
+        "run_id": run_id,
+        "run_mode": "legacy",
+        "events": [
+            {
+                "timestamp_utc": timestamp,
+                "stage": "legacy_run_rehydrated",
+                "details": {
+                    "status": run_status,
+                    "message": "Trace reconstructed during legacy migration.",
+                },
+            }
+        ],
+    }
+
+
+def _write_json_file(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="\n") as f:
+        json.dump(payload, f, indent=2, ensure_ascii=True)
+        f.write("\n")
