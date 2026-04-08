@@ -249,6 +249,33 @@ class QueueTests(unittest.TestCase):
             self.assertEqual(counts.get("QUEUED", 0), 0)
             self.assertEqual(counts.get("SUCCESS", 0), 2)
 
+    def test_queue_stale_running_lists_old_running_jobs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            engine = JarvisEngine(root)
+            submitted = engine.queue_submit(_base_task("task-q-0012"), dry_run=False, max_attempts=2)
+            job_id = submitted["job"]["job_id"]
+            claimed = engine.queue.claim_next_job("worker-stale-view")
+            self.assertIsNotNone(claimed)
+            self.assertEqual(str(claimed["status"]), "RUNNING")
+
+            stale_started = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+            con = engine.queue._connect()
+            try:
+                con.execute(
+                    "UPDATE jobs SET started_at_utc = ? WHERE job_id = ?",
+                    (stale_started, job_id),
+                )
+                con.commit()
+            finally:
+                con.close()
+
+            stale = engine.queue_stale_running(limit=20, max_age_sec=60)
+            self.assertEqual(stale["status"], "ok")
+            self.assertEqual(int(stale["stale_count"]), 1)
+            self.assertEqual(int(stale["scanned_running_count"]), 1)
+            self.assertEqual(str(stale["jobs"][0]["job_id"]), job_id)
+
 
 if __name__ == "__main__":
     unittest.main()

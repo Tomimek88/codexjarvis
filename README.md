@@ -174,6 +174,7 @@ jarvis --root <project_root> queue-list [--status QUEUED] [--limit 20]
 jarvis --root <project_root> queue-get --job-id <job_id>
 jarvis --root <project_root> queue-stats
 jarvis --root <project_root> queue-requeue-failed [--limit 20] [--keep-attempts]
+jarvis --root <project_root> queue-stale-running [--limit 20] [--max-age-sec 300]
 jarvis --root <project_root> queue-recover-running [--limit 20] [--max-age-sec 300] [--force-requeue] [--reset-attempts]
 jarvis --root <project_root> queue-cancel --job-id <job_id> [--reason "..."]
 jarvis --root <project_root> queue-work-once [--worker-id worker-1]

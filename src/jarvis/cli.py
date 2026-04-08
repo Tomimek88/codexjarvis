@@ -271,6 +271,13 @@ def build_parser() -> argparse.ArgumentParser:
     queue_recover_parser.add_argument("--force-requeue", action="store_true")
     queue_recover_parser.add_argument("--reset-attempts", action="store_true")
 
+    queue_stale_parser = subparsers.add_parser(
+        "queue-stale-running",
+        help="List stale RUNNING jobs without modifying queue state.",
+    )
+    queue_stale_parser.add_argument("--limit", type=int, default=20)
+    queue_stale_parser.add_argument("--max-age-sec", type=int, default=300)
+
     queue_cancel_parser = subparsers.add_parser(
         "queue-cancel",
         help="Cancel one queue job by id.",
@@ -448,6 +455,11 @@ def main(argv: list[str] | None = None) -> int:
                 max_age_sec=args.max_age_sec,
                 force_requeue=bool(args.force_requeue),
                 reset_attempts=bool(args.reset_attempts),
+            )
+        elif args.command == "queue-stale-running":
+            payload = engine.queue_stale_running(
+                limit=args.limit,
+                max_age_sec=args.max_age_sec,
             )
         elif args.command == "queue-cancel":
             payload = engine.queue_cancel(args.job_id, reason=args.reason)
