@@ -534,6 +534,123 @@ class JarvisEngine:
             "warnings": warnings,
         }
 
+    def mission_queue(
+        self,
+        *,
+        objective: str,
+        domain: str = "generic",
+        parameters: dict[str, Any] | None = None,
+        task_id: str | None = None,
+        force_rerun: bool = False,
+        acceptance_criteria: list[str] | None = None,
+        dry_run: bool = False,
+        max_attempts: int = 1,
+        process_now: bool = False,
+        worker_id: str | None = None,
+        max_cycles: int = 20,
+        poll_interval_sec: float = 1.0,
+        max_jobs_per_cycle: int = 10,
+        idle_stop_after: int = 1,
+        generate_report: bool = True,
+        generate_dashboard: bool = True,
+        dashboard_limit: int = 50,
+    ) -> dict[str, Any]:
+        submitted = self.queue_submit_quick(
+            objective=objective,
+            domain=domain,
+            parameters=parameters,
+            task_id=task_id,
+            force_rerun=force_rerun,
+            acceptance_criteria=acceptance_criteria,
+            dry_run=dry_run,
+            max_attempts=max_attempts,
+        )
+        submitted_job = submitted.get("job", {})
+        if not isinstance(submitted_job, dict):
+            submitted_job = {}
+        job_id = str(submitted_job.get("job_id", "") or "")
+        warnings: list[str] = []
+        daemon_payload: dict[str, Any] | None = None
+
+        final_job = dict(submitted_job)
+        if process_now and job_id:
+            daemon_payload = self.queue_work_daemon(
+                max_cycles=max_cycles,
+                poll_interval_sec=poll_interval_sec,
+                max_jobs_per_cycle=max_jobs_per_cycle,
+                idle_stop_after=idle_stop_after,
+                worker_id=worker_id,
+                include_cycle_results=False,
+            )
+            try:
+                final_job = self.queue.get_job(job_id)
+            except Exception:
+                final_job = dict(submitted_job)
+        elif not process_now and generate_report:
+            warnings.append("report_skipped_queue_not_processed")
+
+        job_status = str(final_job.get("status", "QUEUED") or "QUEUED").upper()
+        mission_status = {
+            "SUCCESS": "completed",
+            "FAILED": "failed",
+            "CANCELLED": "cancelled",
+            "RUNNING": "running",
+            "QUEUED": "queued",
+        }.get(job_status, job_status.lower())
+
+        run_id = str(final_job.get("run_id", "") or "").strip()
+        queue_result_payload = self._load_queue_result_payload(final_job)
+        if not run_id and isinstance(queue_result_payload, dict):
+            run_id = str(queue_result_payload.get("run_id", "") or "").strip()
+            if not run_id:
+                nested = queue_result_payload.get("result", {})
+                if isinstance(nested, dict):
+                    run_id = str(nested.get("run_id", "") or "").strip()
+
+        report_payload: dict[str, Any] | None = None
+        if generate_report and run_id:
+            try:
+                report_payload = self.report_run(run_id)
+            except Exception as exc:
+                report_payload = {
+                    "status": "error",
+                    "error": f"{type(exc).__name__}: {exc}",
+                }
+                warnings.append("report_generation_failed")
+        elif generate_report and process_now:
+            warnings.append("report_skipped_no_run_id")
+
+        dashboard_payload: dict[str, Any] | None = None
+        if generate_dashboard:
+            try:
+                dashboard_payload = self.runs_dashboard(
+                    limit=dashboard_limit,
+                    domain=domain,
+                    include_failed=True,
+                )
+            except Exception as exc:
+                dashboard_payload = {
+                    "status": "error",
+                    "error": f"{type(exc).__name__}: {exc}",
+                }
+                warnings.append("dashboard_generation_failed")
+
+        return {
+            "status": "ok",
+            "mission_status": mission_status,
+            "job_id": job_id,
+            "job_status": job_status,
+            "run_id": run_id,
+            "submitted_job": submitted_job,
+            "job": final_job,
+            "queue_result": queue_result_payload,
+            "processed_now": bool(process_now),
+            "daemon": daemon_payload,
+            "report": report_payload,
+            "dashboard": dashboard_payload,
+            "warnings": warnings,
+        }
+
     def task_validate(self, task_file: Path) -> dict[str, Any]:
         path = task_file.resolve()
         task = load_json_file(path)
@@ -2652,6 +2769,23 @@ class JarvisEngine:
             return {}
         payload = load_json_file(path)
         return payload if isinstance(payload, dict) else {}
+
+    def _load_queue_result_payload(self, job: dict[str, Any]) -> dict[str, Any] | None:
+        if not isinstance(job, dict):
+            return None
+        result_rel = str(job.get("result_path", "") or "").strip()
+        if not result_rel:
+            return None
+        result_path = (self.project_root / result_rel).resolve()
+        if not _is_within_root(result_path, self.project_root.resolve()):
+            return None
+        if not result_path.exists() or not result_path.is_file():
+            return None
+        try:
+            payload = load_json_file(result_path)
+        except Exception:
+            return None
+        return payload if isinstance(payload, dict) else None
 
     @staticmethod
     def _trace_event(trace: dict[str, Any], stage: str, details: dict[str, Any] | None = None) -> None:

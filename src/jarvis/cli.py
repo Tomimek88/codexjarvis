@@ -104,6 +104,29 @@ def build_parser() -> argparse.ArgumentParser:
     mission_parser.add_argument("--no-dashboard", action="store_true")
     mission_parser.add_argument("--dashboard-limit", type=int, default=50)
 
+    mission_queue_parser = subparsers.add_parser(
+        "mission-queue",
+        help="Submit one mission to queue and optionally process it immediately.",
+    )
+    mission_queue_parser.add_argument("--objective", type=str, required=True)
+    mission_queue_parser.add_argument("--domain", type=str, default="generic")
+    mission_queue_parser.add_argument("--task-id", type=str, required=False)
+    mission_queue_parser.add_argument("--params-json", type=str, default="{}")
+    mission_queue_parser.add_argument("--param", action="append", dest="param_pairs", default=[])
+    mission_queue_parser.add_argument("--acceptance", action="append", dest="acceptance", default=[])
+    mission_queue_parser.add_argument("--force-rerun", action="store_true")
+    mission_queue_parser.add_argument("--dry-run", action="store_true")
+    mission_queue_parser.add_argument("--max-attempts", type=int, default=1)
+    mission_queue_parser.add_argument("--process-now", action="store_true")
+    mission_queue_parser.add_argument("--worker-id", type=str, required=False)
+    mission_queue_parser.add_argument("--max-cycles", type=int, default=20)
+    mission_queue_parser.add_argument("--poll-interval-sec", type=float, default=1.0)
+    mission_queue_parser.add_argument("--max-jobs-per-cycle", type=int, default=10)
+    mission_queue_parser.add_argument("--idle-stop-after", type=int, default=1)
+    mission_queue_parser.add_argument("--no-report", action="store_true")
+    mission_queue_parser.add_argument("--no-dashboard", action="store_true")
+    mission_queue_parser.add_argument("--dashboard-limit", type=int, default=50)
+
     batch_parser = subparsers.add_parser(
         "batch-run",
         help="Run multiple task JSON files from a directory.",
@@ -492,6 +515,28 @@ def main(argv: list[str] | None = None) -> int:
                 force_rerun=bool(args.force_rerun),
                 acceptance_criteria=list(args.acceptance or []),
                 dry_run=bool(args.dry_run),
+                generate_report=not bool(args.no_report),
+                generate_dashboard=not bool(args.no_dashboard),
+                dashboard_limit=args.dashboard_limit,
+            )
+        elif args.command == "mission-queue":
+            params = _parse_json_object_arg(args.params_json, "--params-json")
+            params.update(_parse_param_pairs(list(args.param_pairs or []), "--param"))
+            payload = engine.mission_queue(
+                objective=args.objective,
+                domain=args.domain,
+                parameters=params,
+                task_id=args.task_id,
+                force_rerun=bool(args.force_rerun),
+                acceptance_criteria=list(args.acceptance or []),
+                dry_run=bool(args.dry_run),
+                max_attempts=args.max_attempts,
+                process_now=bool(args.process_now),
+                worker_id=args.worker_id,
+                max_cycles=args.max_cycles,
+                poll_interval_sec=args.poll_interval_sec,
+                max_jobs_per_cycle=args.max_jobs_per_cycle,
+                idle_stop_after=args.idle_stop_after,
                 generate_report=not bool(args.no_report),
                 generate_dashboard=not bool(args.no_dashboard),
                 dashboard_limit=args.dashboard_limit,
