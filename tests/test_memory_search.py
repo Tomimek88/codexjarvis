@@ -56,6 +56,70 @@ class MemorySearchTests(unittest.TestCase):
             run_ids = [row["run_id"] for row in semantic["results"]]
             self.assertIn(out["run_id"], run_ids)
 
+    def test_memory_hybrid_search_combines_scores(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            engine = JarvisEngine(root)
+            task = {
+                "task_id": "task-ms-0003",
+                "objective": "Compute deterministic weighted trend score for calibration.",
+                "domain": "generic",
+                "requires_computation": True,
+                "allow_internet_research": True,
+                "strict_no_guessing": True,
+                "parameters": {"a": 3, "b": 4, "c": 5, "seed": 42},
+            }
+            out = engine.run(task, dry_run=False)
+            self.assertEqual(out["status"], "completed")
+
+            hybrid = engine.memory_hybrid_search(
+                query="weighted deterministic trend calibration",
+                limit=5,
+                lexical_weight=0.5,
+                semantic_weight=0.5,
+                min_combined_score=0.05,
+            )
+            self.assertEqual(hybrid["status"], "ok")
+            self.assertGreaterEqual(hybrid["count"], 1)
+            top = hybrid["results"][0]
+            self.assertIn("combined_score", top)
+            self.assertIn("lexical_score", top)
+            self.assertIn("semantic_score", top)
+            run_ids = [row["run_id"] for row in hybrid["results"]]
+            self.assertIn(out["run_id"], run_ids)
+
+    def test_memory_reindex_all_backfills_existing_runs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            engine = JarvisEngine(root)
+            task = {
+                "task_id": "task-ms-0004",
+                "objective": "Create baseline run for reindex operation.",
+                "domain": "generic",
+                "requires_computation": True,
+                "allow_internet_research": True,
+                "strict_no_guessing": True,
+                "parameters": {"a": 8, "b": 3, "c": 1, "seed": 42},
+            }
+            out = engine.run(task, dry_run=False)
+            self.assertEqual(out["status"], "completed")
+            run_id = out["run_id"]
+
+            db_path = root / "data" / "memory" / "memory.db"
+            db_path.unlink(missing_ok=True)
+
+            engine2 = JarvisEngine(root)
+            before = engine2.memory_query(limit=20)
+            self.assertEqual(before["count"], 0)
+
+            reindexed = engine2.memory_reindex_all()
+            self.assertEqual(reindexed["status"], "ok")
+            self.assertGreaterEqual(reindexed["indexed_count"], 1)
+            self.assertIn(run_id, reindexed["indexed_run_ids"])
+
+            after = engine2.memory_get(run_id)
+            self.assertEqual(after["status"], "ok")
+
 
 if __name__ == "__main__":
     unittest.main()

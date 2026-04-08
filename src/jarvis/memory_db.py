@@ -426,6 +426,84 @@ class MemoryStore:
         scored = sorted(scored, key=lambda item: (-item["semantic_score"], item["timestamp_utc"]))
         return scored[: max(1, min(limit, 100))]
 
+    def hybrid_search_runs(
+        self,
+        *,
+        query: str,
+        limit: int = 10,
+        domain: str | None = None,
+        status: str | None = None,
+        lexical_weight: float = 0.4,
+        semantic_weight: float = 0.6,
+        min_combined_score: float = 0.0,
+    ) -> list[dict[str, Any]]:
+        safe_limit = max(1, min(limit, 100))
+        lexical = self.search_runs(
+            query=query,
+            limit=min(500, safe_limit * 8),
+            domain=domain,
+            status=status,
+        )
+        semantic = self.semantic_search_runs(
+            query=query,
+            limit=min(500, safe_limit * 8),
+            domain=domain,
+            status=status,
+            min_score=0.0,
+        )
+
+        if len(lexical) == 0 and len(semantic) == 0:
+            return []
+
+        max_lex = max((float(row.get("score", 0.0)) for row in lexical), default=0.0)
+        max_sem = max((float(row.get("semantic_score", 0.0)) for row in semantic), default=0.0)
+        lw = max(0.0, float(lexical_weight))
+        sw = max(0.0, float(semantic_weight))
+        if lw == 0.0 and sw == 0.0:
+            lw = 0.4
+            sw = 0.6
+
+        merged: dict[str, dict[str, Any]] = {}
+        for row in lexical:
+            run_id = str(row.get("run_id", ""))
+            if not run_id:
+                continue
+            rec = dict(row)
+            rec["lexical_score"] = float(row.get("score", 0.0))
+            rec["semantic_score"] = 0.0
+            merged[run_id] = rec
+
+        for row in semantic:
+            run_id = str(row.get("run_id", ""))
+            if not run_id:
+                continue
+            if run_id not in merged:
+                rec = dict(row)
+                rec["lexical_score"] = 0.0
+                rec["score"] = 0.0
+                merged[run_id] = rec
+            merged[run_id]["semantic_score"] = float(row.get("semantic_score", 0.0))
+            if not merged[run_id].get("memo_preview"):
+                merged[run_id]["memo_preview"] = row.get("memo_preview", "")
+
+        threshold = max(0.0, float(min_combined_score))
+        output: list[dict[str, Any]] = []
+        for rec in merged.values():
+            lex_raw = float(rec.get("lexical_score", 0.0))
+            sem_raw = float(rec.get("semantic_score", 0.0))
+            lex_norm = lex_raw / max_lex if max_lex > 0.0 else 0.0
+            sem_norm = sem_raw / max_sem if max_sem > 0.0 else 0.0
+            combined = (lw * lex_norm) + (sw * sem_norm)
+            if combined < threshold:
+                continue
+            rec["lexical_score"] = round(lex_raw, 6)
+            rec["semantic_score"] = round(sem_raw, 6)
+            rec["combined_score"] = round(combined, 6)
+            output.append(rec)
+
+        output = sorted(output, key=lambda item: (-item["combined_score"], item["timestamp_utc"]))
+        return output[:safe_limit]
+
     def get_run(self, run_id: str) -> dict[str, Any] | None:
         self.ensure_schema()
         con = self._connect()

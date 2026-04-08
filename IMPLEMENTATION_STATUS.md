@@ -12,6 +12,7 @@
   - SQLite memory DB (`data/memory/memory.db`) with run + artifact index
   - memory memo search (`memory-search`) over indexed runs
   - semantic sparse-vector search (`memory-semantic-search`) over indexed runs
+  - hybrid retrieval (`memory-hybrid-search`) and bulk backfill (`memory-reindex-all`)
   - health checks (`jarvis health`)
   - one-command bootstrap scripts (`scripts/bootstrap.ps1`, `scripts/bootstrap.sh`)
   - smoke scripts (`scripts/smoke.ps1`, `scripts/smoke.sh`)

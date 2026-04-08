@@ -148,8 +148,10 @@ jarvis --root <project_root> trace --run-id <run_id>
 jarvis --root <project_root> memory-query --limit 20 [--domain generic] [--status SUCCESS] [--contains text]
 jarvis --root <project_root> memory-search --query "<text>" [--limit 10] [--domain generic] [--status SUCCESS]
 jarvis --root <project_root> memory-semantic-search --query "<text>" [--limit 10] [--domain generic] [--status SUCCESS] [--min-score 0.0]
+jarvis --root <project_root> memory-hybrid-search --query "<text>" [--limit 10] [--lexical-weight 0.4] [--semantic-weight 0.6] [--min-combined-score 0.0]
 jarvis --root <project_root> memory-get --run-id <run_id>
 jarvis --root <project_root> memory-index --run-id <run_id>
+jarvis --root <project_root> memory-reindex-all [--limit 0] [--include-failed]
 jarvis --root <project_root> queue-submit --task-file <task.json> [--dry-run] [--max-attempts 1]
 jarvis --root <project_root> queue-list [--status QUEUED] [--limit 20]
 jarvis --root <project_root> queue-get --job-id <job_id>
@@ -164,6 +166,8 @@ jarvis --root <project_root> queue-work [--max-jobs 10] [--worker-id worker-1]
 - `memory-query` is the fast operator-facing lookup for replay/reuse decisions.
 - `memory-search` returns ranked runs by memo/objective token match.
 - `memory-semantic-search` returns cosine-ranked runs from local sparse vectors.
+- `memory-hybrid-search` combines lexical + semantic ranking into one score.
+- `memory-reindex-all` backfills memory DB entries from existing `data/runs/*`.
 - Obsidian can still be used as human notes, but this SQLite DB is the source of truth for deterministic runtime memory.
 
 ## Truth Layer (Current)

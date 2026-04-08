@@ -68,6 +68,18 @@ def build_parser() -> argparse.ArgumentParser:
     mem_semantic_parser.add_argument("--status", type=str, required=False)
     mem_semantic_parser.add_argument("--min-score", type=float, default=0.0)
 
+    mem_hybrid_parser = subparsers.add_parser(
+        "memory-hybrid-search",
+        help="Hybrid search combining lexical and semantic memory ranking.",
+    )
+    mem_hybrid_parser.add_argument("--query", type=str, required=True)
+    mem_hybrid_parser.add_argument("--limit", type=int, default=10)
+    mem_hybrid_parser.add_argument("--domain", type=str, required=False)
+    mem_hybrid_parser.add_argument("--status", type=str, required=False)
+    mem_hybrid_parser.add_argument("--lexical-weight", type=float, default=0.4)
+    mem_hybrid_parser.add_argument("--semantic-weight", type=float, default=0.6)
+    mem_hybrid_parser.add_argument("--min-combined-score", type=float, default=0.0)
+
     mem_get_parser = subparsers.add_parser(
         "memory-get",
         help="Get one indexed run and its artifacts from SQLite memory store.",
@@ -79,6 +91,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Index an existing run from data/runs/<run_id> into SQLite memory store.",
     )
     mem_index_parser.add_argument("--run-id", type=str, required=True)
+
+    mem_reindex_parser = subparsers.add_parser(
+        "memory-reindex-all",
+        help="Reindex existing run directories into SQLite memory store.",
+    )
+    mem_reindex_parser.add_argument("--limit", type=int, default=0)
+    mem_reindex_parser.add_argument("--include-failed", action="store_true")
 
     queue_submit_parser = subparsers.add_parser(
         "queue-submit",
@@ -154,10 +173,25 @@ def main(argv: list[str] | None = None) -> int:
                 status=args.status,
                 min_score=args.min_score,
             )
+        elif args.command == "memory-hybrid-search":
+            payload = engine.memory_hybrid_search(
+                query=args.query,
+                limit=args.limit,
+                domain=args.domain,
+                status=args.status,
+                lexical_weight=args.lexical_weight,
+                semantic_weight=args.semantic_weight,
+                min_combined_score=args.min_combined_score,
+            )
         elif args.command == "memory-get":
             payload = engine.memory_get(args.run_id)
         elif args.command == "memory-index":
             payload = engine.index_run(args.run_id)
+        elif args.command == "memory-reindex-all":
+            payload = engine.memory_reindex_all(
+                limit=args.limit,
+                include_failed=bool(args.include_failed),
+            )
         elif args.command == "queue-submit":
             payload = engine.queue_submit_from_file(
                 args.task_file.resolve(),

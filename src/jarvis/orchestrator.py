@@ -515,6 +515,83 @@ class JarvisEngine:
         )
         return {"status": "ok", "count": len(rows), "results": rows}
 
+    def memory_hybrid_search(
+        self,
+        *,
+        query: str,
+        limit: int = 10,
+        domain: str | None = None,
+        status: str | None = None,
+        lexical_weight: float = 0.4,
+        semantic_weight: float = 0.6,
+        min_combined_score: float = 0.0,
+    ) -> dict[str, Any]:
+        rows = self.memory.hybrid_search_runs(
+            query=query,
+            limit=limit,
+            domain=domain,
+            status=status,
+            lexical_weight=lexical_weight,
+            semantic_weight=semantic_weight,
+            min_combined_score=min_combined_score,
+        )
+        return {"status": "ok", "count": len(rows), "results": rows}
+
+    def memory_reindex_all(
+        self,
+        *,
+        limit: int = 0,
+        include_failed: bool = False,
+    ) -> dict[str, Any]:
+        self.store.ensure_layout()
+        self.memory.ensure_schema()
+
+        run_dirs = [path for path in self.store.runs_dir.iterdir() if path.is_dir()]
+        run_dirs = sorted(run_dirs, key=lambda path: path.name, reverse=True)
+        if limit > 0:
+            run_dirs = run_dirs[:limit]
+
+        indexed_run_ids: list[str] = []
+        errors: list[dict[str, str]] = []
+        skipped_missing = 0
+        skipped_status = 0
+
+        for run_dir in run_dirs:
+            run_id = run_dir.name
+            evidence_path = run_dir / "evidence_bundle.json"
+            meta_path = run_dir / "meta.json"
+            if not evidence_path.exists() or not meta_path.exists():
+                skipped_missing += 1
+                continue
+
+            try:
+                evidence = load_json_file(evidence_path)
+            except Exception as exc:
+                errors.append({"run_id": run_id, "error": f"{type(exc).__name__}: {exc}"})
+                continue
+
+            run_status = str(evidence.get("status", ""))
+            if not include_failed and run_status != "SUCCESS":
+                skipped_status += 1
+                continue
+
+            try:
+                self.index_run(run_id)
+                indexed_run_ids.append(run_id)
+            except Exception as exc:
+                errors.append({"run_id": run_id, "error": f"{type(exc).__name__}: {exc}"})
+
+        return {
+            "status": "ok",
+            "total_candidates": len(run_dirs),
+            "indexed_count": len(indexed_run_ids),
+            "skipped_missing_count": skipped_missing,
+            "skipped_status_count": skipped_status,
+            "error_count": len(errors),
+            "indexed_run_ids": indexed_run_ids,
+            "errors": errors[:20],
+        }
+
     def index_run(self, run_id: str) -> dict[str, Any]:
         run_dir = self.store.run_path(run_id)
         if not run_dir.exists():
