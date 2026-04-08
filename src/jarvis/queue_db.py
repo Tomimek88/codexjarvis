@@ -563,6 +563,7 @@ class QueueStore:
         statuses: list[str] | None = None,
         older_than_sec: int = 0,
         delete_results: bool = True,
+        dry_run: bool = False,
     ) -> dict[str, Any]:
         self.ensure_schema()
         safe_limit = max(1, min(int(limit), 10000)) if int(limit) > 0 else 0
@@ -579,9 +580,12 @@ class QueueStore:
                 "requested_limit": safe_limit,
                 "statuses": [],
                 "older_than_sec": safe_older_than_sec,
+                "dry_run": bool(dry_run),
+                "would_prune_count": 0,
                 "matched_count": 0,
                 "pruned_count": 0,
                 "result_files_deleted": 0,
+                "result_files_would_delete": 0,
                 "result_files_missing": 0,
                 "jobs": [],
             }
@@ -610,15 +614,19 @@ class QueueStore:
                     "requested_limit": safe_limit,
                     "statuses": normalized_statuses,
                     "older_than_sec": safe_older_than_sec,
+                    "dry_run": bool(dry_run),
+                    "would_prune_count": 0,
                     "matched_count": 0,
                     "pruned_count": 0,
                     "result_files_deleted": 0,
+                    "result_files_would_delete": 0,
                     "result_files_missing": 0,
                     "jobs": [],
                 }
 
             root = self.project_root.resolve()
             deleted_files = 0
+            would_delete_files = 0
             missing_files = 0
             pruned_jobs: list[dict[str, Any]] = []
             job_ids: list[str] = []
@@ -631,8 +639,10 @@ class QueueStore:
                     abs_result = (self.project_root / result_path).resolve()
                     if _is_within_root(abs_result, root):
                         if abs_result.exists():
-                            abs_result.unlink(missing_ok=True)
-                            deleted_files += 1
+                            would_delete_files += 1
+                            if not dry_run:
+                                abs_result.unlink(missing_ok=True)
+                                deleted_files += 1
                         else:
                             missing_files += 1
 
@@ -645,18 +655,23 @@ class QueueStore:
                     }
                 )
 
-            con.executemany("DELETE FROM jobs WHERE job_id = ?", [(job_id,) for job_id in job_ids])
-            con.commit()
+            if not dry_run:
+                con.executemany("DELETE FROM jobs WHERE job_id = ?", [(job_id,) for job_id in job_ids])
+                con.commit()
         finally:
             con.close()
 
+        pruned_count = 0 if dry_run else len(rows)
         return {
             "requested_limit": safe_limit,
             "statuses": normalized_statuses,
             "older_than_sec": safe_older_than_sec,
+            "dry_run": bool(dry_run),
+            "would_prune_count": len(rows),
             "matched_count": len(rows),
-            "pruned_count": len(rows),
+            "pruned_count": pruned_count,
             "result_files_deleted": deleted_files,
+            "result_files_would_delete": would_delete_files,
             "result_files_missing": missing_files,
             "jobs": pruned_jobs,
         }

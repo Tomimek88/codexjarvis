@@ -324,6 +324,36 @@ class QueueTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 engine.queue_get(cancel_id)
 
+    def test_queue_prune_dry_run_does_not_delete_jobs_or_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            engine = JarvisEngine(root)
+
+            success_sub = engine.queue_submit(_base_task("task-q-0016"), dry_run=False, max_attempts=1)
+            success_id = success_sub["job"]["job_id"]
+            success_out = engine.queue_work_once(worker_id="worker-prune-dry")
+            self.assertEqual(success_out["status"], "job_completed")
+
+            success_job = engine.queue_get(success_id)["job"]
+            success_result = str(success_job.get("result_path", "")).strip()
+            self.assertTrue((root / success_result).exists())
+
+            preview = engine.queue_prune(
+                limit=10,
+                statuses=["SUCCESS"],
+                older_than_sec=0,
+                dry_run=True,
+            )
+            self.assertEqual(preview["status"], "ok")
+            self.assertTrue(bool(preview["dry_run"]))
+            self.assertEqual(int(preview["would_prune_count"]), 1)
+            self.assertEqual(int(preview["pruned_count"]), 0)
+            self.assertGreaterEqual(int(preview["result_files_would_delete"]), 1)
+
+            fetched = engine.queue_get(success_id)["job"]
+            self.assertEqual(str(fetched["status"]), "SUCCESS")
+            self.assertTrue((root / success_result).exists())
+
 
 if __name__ == "__main__":
     unittest.main()

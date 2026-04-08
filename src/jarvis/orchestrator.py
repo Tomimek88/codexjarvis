@@ -2085,21 +2085,26 @@ class JarvisEngine:
         statuses: list[str] | None = None,
         older_than_sec: int = 0,
         delete_results: bool = True,
+        dry_run: bool = False,
     ) -> dict[str, Any]:
         out = self.queue.prune_jobs(
             limit=limit,
             statuses=statuses,
             older_than_sec=older_than_sec,
             delete_results=delete_results,
+            dry_run=dry_run,
         )
         return {
             "status": "ok",
             "requested_limit": out.get("requested_limit", 0),
             "statuses": out.get("statuses", []),
             "older_than_sec": out.get("older_than_sec", 0),
+            "dry_run": bool(out.get("dry_run", False)),
+            "would_prune_count": out.get("would_prune_count", 0),
             "matched_count": out.get("matched_count", 0),
             "pruned_count": out.get("pruned_count", 0),
             "result_files_deleted": out.get("result_files_deleted", 0),
+            "result_files_would_delete": out.get("result_files_would_delete", 0),
             "result_files_missing": out.get("result_files_missing", 0),
             "jobs": out.get("jobs", []),
         }
