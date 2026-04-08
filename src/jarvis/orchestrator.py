@@ -1435,30 +1435,96 @@ class JarvisEngine:
             "rebuilt_entry_count": len(entries),
         }
 
-    def doctor(self) -> dict[str, Any]:
-        health = self.health()
-        cache = self.cache_verify(limit=200)
-        queue = self.queue_stats()
-        runs = self.runs_stats(limit=200)
-        audit = self.audit_all(limit=50, include_passed=False)
+    def doctor(self, *, fix: bool = False) -> dict[str, Any]:
+        snapshot_before = self._collect_doctor_snapshot()
+        warnings_before = self._build_doctor_warnings(snapshot_before)
+        fix_actions: list[dict[str, Any]] = []
 
-        warnings: list[str] = []
-        if str(health.get("status", "")).lower() != "ok":
-            warnings.append("runtime_health_degraded")
-        if int(cache.get("invalid_count", 0)) > 0:
-            warnings.append("cache_invalid_entries_present")
-        queue_stats = queue.get("stats", {}) if isinstance(queue, dict) else {}
-        if int(queue_stats.get("dead_failed_count", 0)) > 0:
-            warnings.append("queue_dead_failed_jobs_present")
-        if int(audit.get("failed_count", 0)) > 0:
-            warnings.append("run_integrity_failures_present")
+        if fix:
+            migrated = self.runs_migrate_legacy(limit=0, write_execution_manifest=True, write_trace=True)
+            fix_actions.append(
+                {
+                    "action": "runs_migrate_legacy",
+                    "result": {
+                        "migrated_runs": int(migrated.get("migrated_runs", 0)),
+                        "execution_manifest_written": int(migrated.get("execution_manifest_written", 0)),
+                        "trace_written": int(migrated.get("trace_written", 0)),
+                        "error_count": int(migrated.get("error_count", 0)),
+                    },
+                }
+            )
+            if "run_integrity_failures_present" in warnings_before:
+                repaired = self._repair_runtime_artifact_hashes(limit=0)
+                fix_actions.append(
+                    {
+                        "action": "repair_runtime_artifact_hashes",
+                        "result": {
+                            "scanned_runs": int(repaired.get("scanned_runs", 0)),
+                            "touched_runs": int(repaired.get("touched_runs", 0)),
+                            "updated_artifacts": int(repaired.get("updated_artifacts", 0)),
+                            "error_count": int(repaired.get("error_count", 0)),
+                        },
+                    }
+                )
 
+            if int(snapshot_before["cache_verify"].get("invalid_count", 0)) > 0:
+                rebuilt = self.cache_rebuild(limit=0, include_failed=False)
+                fix_actions.append(
+                    {
+                        "action": "cache_rebuild",
+                        "result": {
+                            "processed_runs": int(rebuilt.get("processed_runs", 0)),
+                            "skipped_runs": int(rebuilt.get("skipped_runs", 0)),
+                            "rebuilt_entry_count": int(rebuilt.get("rebuilt_entry_count", 0)),
+                            "duplicate_cache_keys": int(rebuilt.get("duplicate_cache_keys", 0)),
+                        },
+                    }
+                )
+
+            dead_failed_count = int(snapshot_before["queue_stats"].get("dead_failed_count", 0))
+            if dead_failed_count > 0:
+                requeued = self.queue_requeue_failed(limit=dead_failed_count, reset_attempts=True)
+                fix_actions.append(
+                    {
+                        "action": "queue_requeue_failed",
+                        "result": {
+                            "requeued_count": int(requeued.get("requeued_count", 0)),
+                            "requested_limit": int(requeued.get("requested_limit", 0)),
+                        },
+                    }
+                )
+
+        snapshot = self._collect_doctor_snapshot()
+        warnings = self._build_doctor_warnings(snapshot)
         overall = "ok" if len(warnings) == 0 else "warning"
-        return {
+
+        payload = {
             "status": "ok",
             "overall": overall,
             "warning_count": len(warnings),
             "warnings": warnings,
+            "health": snapshot["health"],
+            "cache_verify": snapshot["cache_verify"],
+            "queue_stats": snapshot["queue_stats"],
+            "runs_stats": snapshot["runs_stats"],
+            "audit_summary": snapshot["audit_summary"],
+        }
+        if fix:
+            payload["fix_requested"] = True
+            payload["fix_actions"] = fix_actions
+            payload["pre_fix_warning_count"] = len(warnings_before)
+            payload["pre_fix_warnings"] = warnings_before
+            payload["post_fix_warning_count"] = len(warnings)
+        return payload
+
+    def _collect_doctor_snapshot(self) -> dict[str, Any]:
+        health = self.health()
+        cache = self.cache_verify(limit=200)
+        queue_payload = self.queue_stats()
+        queue_stats = queue_payload.get("stats", {}) if isinstance(queue_payload, dict) else {}
+        runs = self.runs_stats(limit=200)
+        audit = self.audit_all(limit=50, include_passed=False)
+        return {
             "health": health,
             "cache_verify": cache,
             "queue_stats": queue_stats,
@@ -1469,6 +1535,85 @@ class JarvisEngine:
                 "error_count": int(audit.get("error_count", 0)),
             },
         }
+
+    def _repair_runtime_artifact_hashes(self, *, limit: int = 0) -> dict[str, Any]:
+        self.store.ensure_layout()
+        run_dirs = [path for path in self.store.runs_dir.iterdir() if path.is_dir()]
+        run_dirs = sorted(run_dirs, key=lambda path: path.name, reverse=True)
+        if limit > 0:
+            run_dirs = run_dirs[: max(1, min(int(limit), 100000))]
+
+        runtime_suffixes = ("/execution_manifest.json", "/trace.json")
+        touched_runs = 0
+        updated_artifacts = 0
+        errors: list[dict[str, str]] = []
+        root_resolved = self.project_root.resolve()
+
+        for run_dir in run_dirs:
+            run_id = run_dir.name
+            evidence_path = run_dir / "evidence_bundle.json"
+            if not evidence_path.exists():
+                continue
+
+            try:
+                evidence = load_json_file(evidence_path)
+            except Exception as exc:
+                errors.append({"run_id": run_id, "error": f"{type(exc).__name__}: {exc}"})
+                continue
+
+            artifacts = evidence.get("artifacts", [])
+            if not isinstance(artifacts, list):
+                continue
+
+            run_changed = False
+            for artifact in artifacts:
+                if not isinstance(artifact, dict):
+                    continue
+                rel_path = str(artifact.get("path", "")).replace("\\", "/")
+                if not any(rel_path.endswith(suffix) for suffix in runtime_suffixes):
+                    continue
+
+                artifact_abs = (self.project_root / rel_path).resolve()
+                if not _is_within_root(artifact_abs, root_resolved) or not artifact_abs.exists():
+                    continue
+
+                expected = str(artifact.get("sha256", ""))
+                actual = sha256_file(artifact_abs)
+                if expected != actual:
+                    artifact["sha256"] = actual
+                    run_changed = True
+                    updated_artifacts += 1
+
+            if run_changed:
+                validate_evidence_bundle(evidence)
+                _write_json_file(evidence_path, evidence)
+                touched_runs += 1
+
+        return {
+            "status": "ok",
+            "scanned_runs": len(run_dirs),
+            "touched_runs": touched_runs,
+            "updated_artifacts": updated_artifacts,
+            "error_count": len(errors),
+            "errors": errors[:100],
+        }
+
+    @staticmethod
+    def _build_doctor_warnings(snapshot: dict[str, Any]) -> list[str]:
+        warnings: list[str] = []
+        health = snapshot.get("health", {})
+        cache = snapshot.get("cache_verify", {})
+        queue_stats = snapshot.get("queue_stats", {})
+        audit_summary = snapshot.get("audit_summary", {})
+        if str(health.get("status", "")).lower() != "ok":
+            warnings.append("runtime_health_degraded")
+        if int(cache.get("invalid_count", 0)) > 0:
+            warnings.append("cache_invalid_entries_present")
+        if int(queue_stats.get("dead_failed_count", 0)) > 0:
+            warnings.append("queue_dead_failed_jobs_present")
+        if int(audit_summary.get("failed_count", 0)) > 0:
+            warnings.append("run_integrity_failures_present")
+        return warnings
 
     def export_run(self, run_id: str) -> dict[str, Any]:
         run_dir = self.store.run_path(run_id)

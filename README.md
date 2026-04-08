@@ -141,7 +141,7 @@ docker compose run --rm jarvis python -m jarvis run --root /app --task-file /app
 
 ```bash
 jarvis --root <project_root> health
-jarvis --root <project_root> doctor
+jarvis --root <project_root> doctor [--fix]
 jarvis --root <project_root> dry-run --task-file <task.json>
 jarvis --root <project_root> run --task-file <task.json>
 jarvis --root <project_root> batch-run --tasks-dir <dir> [--pattern *.json] [--max-tasks 0] [--dry-run] [--non-recursive] [--stop-on-error]
@@ -242,6 +242,14 @@ jarvis --root <project_root> queue-work [--max-jobs 10] [--worker-id worker-1]
   - evidence bundle schema is valid
   - artifact files exist and SHA256 matches evidence references
 - `audit-all` scans multiple runs and returns aggregate pass/fail counts.
+
+## Doctor Diagnostics (Current)
+
+- `doctor` returns one consolidated health snapshot (runtime, cache, queue, run integrity).
+- `doctor --fix` attempts safe auto-remediation for common problems:
+  - backfills missing legacy run files (`execution_manifest.json`, `trace.json`)
+  - rebuilds cache index when invalid entries are detected
+  - requeues dead failed queue jobs for retry
 
 ## Run History (Current)
 

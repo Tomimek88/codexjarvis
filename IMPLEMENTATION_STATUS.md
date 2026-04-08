@@ -40,6 +40,7 @@
   - Legacy run migration command: `runs-migrate-legacy`
   - Cache tooling: `cache-verify` and `cache-rebuild`
   - Doctor command: consolidated diagnostic snapshot (`health` + cache + queue + run audit summary)
+  - Doctor autofix mode: `doctor --fix` for legacy run backfill + cache rebuild + failed queue requeue
   - Batch run command: execute multiple task JSON files with continue/stop-on-error modes
   - Task validation commands: `task-validate` and `task-validate-dir`
   - Run export command: ZIP bundle generation for run portability (`export-run`)
