@@ -370,6 +370,32 @@ class QueueStore:
             "jobs": jobs,
         }
 
+    def cancel_job(self, job_id: str, *, reason: str = "") -> dict[str, Any]:
+        self.ensure_schema()
+        con = self._connect()
+        try:
+            row = con.execute("SELECT * FROM jobs WHERE job_id = ?", (job_id,)).fetchone()
+            if row is None:
+                raise ValueError(f"Queue job '{job_id}' not found.")
+            status = str(row["status"])
+            if status in {"SUCCESS", "FAILED", "CANCELLED"}:
+                return self.get_job(job_id)
+
+            con.execute(
+                """
+                UPDATE jobs
+                SET status='CANCELLED',
+                    finished_at_utc=?,
+                    last_error=?
+                WHERE job_id=?
+                """,
+                (_now_utc(), reason.strip() or "Cancelled by operator.", job_id),
+            )
+            con.commit()
+        finally:
+            con.close()
+        return self.get_job(job_id)
+
     def _write_result(self, job_id: str, payload: dict[str, Any]) -> str:
         self.results_dir.mkdir(parents=True, exist_ok=True)
         path = self.results_dir / f"{job_id}.json"

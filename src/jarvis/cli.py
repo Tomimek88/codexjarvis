@@ -257,6 +257,13 @@ def build_parser() -> argparse.ArgumentParser:
     queue_requeue_parser.add_argument("--limit", type=int, default=20)
     queue_requeue_parser.add_argument("--keep-attempts", action="store_true")
 
+    queue_cancel_parser = subparsers.add_parser(
+        "queue-cancel",
+        help="Cancel one queue job by id.",
+    )
+    queue_cancel_parser.add_argument("--job-id", type=str, required=True)
+    queue_cancel_parser.add_argument("--reason", type=str, default="")
+
     queue_work_once_parser = subparsers.add_parser(
         "queue-work-once",
         help="Process at most one queued job.",
@@ -416,6 +423,8 @@ def main(argv: list[str] | None = None) -> int:
                 limit=args.limit,
                 reset_attempts=not bool(args.keep_attempts),
             )
+        elif args.command == "queue-cancel":
+            payload = engine.queue_cancel(args.job_id, reason=args.reason)
         elif args.command == "queue-work-once":
             payload = engine.queue_work_once(worker_id=args.worker_id)
         elif args.command == "queue-work":

@@ -1867,6 +1867,10 @@ class JarvisEngine:
             "jobs": out.get("jobs", []),
         }
 
+    def queue_cancel(self, job_id: str, *, reason: str = "") -> dict[str, Any]:
+        job = self.queue.cancel_job(job_id, reason=reason)
+        return {"status": "ok", "job": job}
+
     def queue_work_once(self, *, worker_id: str | None = None) -> dict[str, Any]:
         wid = worker_id or f"worker_{uuid4().hex[:8]}"
         job = self.queue.claim_next_job(wid)

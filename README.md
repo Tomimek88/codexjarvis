@@ -174,6 +174,7 @@ jarvis --root <project_root> queue-list [--status QUEUED] [--limit 20]
 jarvis --root <project_root> queue-get --job-id <job_id>
 jarvis --root <project_root> queue-stats
 jarvis --root <project_root> queue-requeue-failed [--limit 20] [--keep-attempts]
+jarvis --root <project_root> queue-cancel --job-id <job_id> [--reason "..."]
 jarvis --root <project_root> queue-work-once [--worker-id worker-1]
 jarvis --root <project_root> queue-work [--max-jobs 10] [--worker-id worker-1]
 ```
@@ -282,6 +283,7 @@ jarvis --root <project_root> queue-work [--max-jobs 10] [--worker-id worker-1]
 - Job results are stored in `data/queue/results/<job_id>.json`.
 - `queue-stats` provides aggregate status counts and retry/dead-failed indicators.
 - `queue-requeue-failed` moves failed jobs back into `QUEUED` for manual replay.
+- `queue-cancel` marks a queued/running job as `CANCELLED`.
 - Submit now, execute later pattern:
   1. `queue-submit`
   2. `queue-work-once` or `queue-work`

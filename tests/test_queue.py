@@ -153,6 +153,21 @@ class QueueTests(unittest.TestCase):
             self.assertEqual(fetched["job"]["status"], "QUEUED")
             self.assertEqual(int(fetched["job"]["attempts"]), 0)
 
+    def test_queue_cancel_sets_cancelled_status(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            engine = JarvisEngine(root)
+            submitted = engine.queue_submit(_base_task("task-q-0007"), dry_run=False, max_attempts=1)
+            job_id = submitted["job"]["job_id"]
+
+            cancelled = engine.queue_cancel(job_id, reason="manual stop")
+            self.assertEqual(cancelled["status"], "ok")
+            self.assertEqual(cancelled["job"]["status"], "CANCELLED")
+            self.assertEqual(cancelled["job"]["last_error"], "manual stop")
+
+            fetched = engine.queue_get(job_id)
+            self.assertEqual(fetched["job"]["status"], "CANCELLED")
+
 
 if __name__ == "__main__":
     unittest.main()
