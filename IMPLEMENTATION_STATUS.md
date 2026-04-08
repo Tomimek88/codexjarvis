@@ -18,6 +18,7 @@
   - replay command (`jarvis replay --run-id`)
   - memory CLI commands (`memory-query`, `memory-get`, `memory-index`)
   - deterministic cache key according to memory policy fields
+  - first real markets engine: CSV-backed MA crossover backtest
 
 ## Current known external blockers on this PC
 

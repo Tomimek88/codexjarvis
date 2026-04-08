@@ -21,6 +21,7 @@ Phase-aligned foundation:
 - Phase 3 seed: orchestrator loop (validate -> cache lookup -> compute -> evidence -> store)
 
 Current simulation engines are deterministic placeholders by domain. They are designed to be replaced in later phases with ASE/RDKit/OpenFOAM/backtesting engines.
+`markets` now includes a CSV-backed baseline backtest engine (`markets_csv_backtest_v1`) for deterministic local runs.
 
 ## Project Layout
 
@@ -39,6 +40,9 @@ scripts/
   bootstrap.sh              # Linux/macOS setup
 examples/tasks/
   generic_sum_task.json     # Smoke task
+  markets_backtest_task.json
+examples/data/markets/
+  demo_prices.csv           # Sample close-price series for markets backtest
 data/
   runs/                     # Per-run artifacts
   cache/                    # cache_index.json
@@ -73,6 +77,13 @@ Smoke test shortcut:
 
 ```powershell
 .\scripts\smoke.ps1
+```
+
+Markets backtest example:
+
+```powershell
+$env:PYTHONPATH='C:\Users\Tomino\Desktop\codexjarvis\src'
+.\.venv\Scripts\python.exe -m jarvis --root C:\Users\Tomino\Desktop\codexjarvis run --task-file C:\Users\Tomino\Desktop\codexjarvis\examples\tasks\markets_backtest_task.json
 ```
 
 ## Docker Option

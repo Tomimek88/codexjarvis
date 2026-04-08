@@ -1,0 +1,25 @@
+{
+  "task_id": "task-markets-0001",
+  "objective": "Run deterministic MA crossover backtest on sample price series.",
+  "domain": "markets",
+  "requires_computation": true,
+  "allow_internet_research": true,
+  "strict_no_guessing": true,
+  "force_rerun": false,
+  "input_refs": [
+    {
+      "name": "demo-prices",
+      "uri": "local://examples/data/markets/demo_prices.csv"
+    }
+  ],
+  "parameters": {
+    "price_csv_path": "examples/data/markets/demo_prices.csv",
+    "short_window": 5,
+    "long_window": 12,
+    "seed": 42
+  },
+  "acceptance_criteria": [
+    "Evidence bundle must contain strategy metrics.",
+    "Run must be deterministic with identical inputs."
+  ]
+}

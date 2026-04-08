@@ -119,7 +119,10 @@ class JarvisEngine:
             status = "SUCCESS"
         else:
             try:
-                result_payload, summary_payload, stdout_text, stderr_text = execute_domain_simulation(task)
+                result_payload, summary_payload, stdout_text, stderr_text = execute_domain_simulation(
+                    task,
+                    project_root=self.project_root,
+                )
                 status = "SUCCESS"
             except Exception as exc:  # pragma: no cover
                 result_payload = {"error": str(exc)}
