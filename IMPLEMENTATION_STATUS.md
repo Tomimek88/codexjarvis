@@ -21,6 +21,8 @@
   - first real markets engine: CSV-backed MA crossover backtest
   - Truth Layer v1: claim-evidence validator with automatic block on unsupported user claims
   - Research Layer v1: source collection + hashed source snapshots + per-run manifest
+  - Execution policy v1: timeout + retry control with execution manifest
+  - Run trace v1: per-stage timeline persisted per run
 
 ## Current known external blockers on this PC
 

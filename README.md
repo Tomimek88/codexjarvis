@@ -34,6 +34,7 @@ src/jarvis/
   contracts.py              # Runtime contract validation
   hashing.py                # Hashing and cache key
   memory_db.py              # SQLite long-term run index
+  execution.py              # timeout/retry execution policy
   orchestrator.py           # Planner/executor baseline
   research.py               # Source collection + tracking
   run_store.py              # Persistent run and cache index storage
@@ -44,6 +45,7 @@ scripts/
 examples/tasks/
   generic_sum_task.json     # Smoke task
   generic_research_task.json
+  generic_timeout_task.json
   generic_truth_block_task.json
   markets_backtest_task.json
 examples/data/markets/
@@ -111,6 +113,13 @@ This run stores:
 - `data/runs/<run_id>/research/sources_manifest.json`
 - `data/runs/<run_id>/research/src_001.txt` (and more sources if provided)
 
+Execution timeout example:
+
+```powershell
+$env:PYTHONPATH='C:\Users\Tomino\Desktop\codexjarvis\src'
+.\.venv\Scripts\python.exe -m jarvis --root C:\Users\Tomino\Desktop\codexjarvis run --task-file C:\Users\Tomino\Desktop\codexjarvis\examples\tasks\generic_timeout_task.json
+```
+
 ## Docker Option
 
 If Docker Desktop is available:
@@ -133,6 +142,7 @@ jarvis --root <project_root> health
 jarvis --root <project_root> dry-run --task-file <task.json>
 jarvis --root <project_root> run --task-file <task.json>
 jarvis --root <project_root> replay --run-id <run_id>
+jarvis --root <project_root> trace --run-id <run_id>
 jarvis --root <project_root> memory-query --limit 20 [--domain generic] [--status SUCCESS] [--contains text]
 jarvis --root <project_root> memory-get --run-id <run_id>
 jarvis --root <project_root> memory-index --run-id <run_id>
@@ -158,6 +168,18 @@ jarvis --root <project_root> memory-index --run-id <run_id>
 - Add `parameters.research_refs` in task JSON (local paths, `local://...`, or URLs).
 - Research artifacts are hash-tracked and attached to the run evidence.
 - URL fetch is best-effort and may fail if network is unavailable; failures are recorded in research manifest.
+
+## Execution + Trace (Current)
+
+- Add `parameters.execution_policy` to control execution:
+  - `timeout_sec`
+  - `max_retries`
+  - `retry_delay_sec`
+- Every run stores:
+  - `data/runs/<run_id>/execution_manifest.json`
+  - `data/runs/<run_id>/trace.json`
+- You can inspect these via:
+  - `jarvis --root <project_root> trace --run-id <run_id>`
 
 ## Evidence-First Guarantee in This Scaffold
 

@@ -1,0 +1,30 @@
+{
+  "task_id": "task-timeout-0001",
+  "objective": "Demonstrate execution policy timeout handling.",
+  "domain": "generic",
+  "requires_computation": true,
+  "allow_internet_research": true,
+  "strict_no_guessing": true,
+  "force_rerun": true,
+  "input_refs": [
+    {
+      "name": "timeout-demo",
+      "uri": "local://examples/timeout-demo"
+    }
+  ],
+  "parameters": {
+    "a": 1,
+    "b": 2,
+    "c": 3,
+    "seed": 42,
+    "simulate_delay_sec": 2.5,
+    "execution_policy": {
+      "timeout_sec": 1,
+      "max_retries": 1,
+      "retry_delay_sec": 0.1
+    }
+  },
+  "acceptance_criteria": [
+    "Run must fail with timeout in execution_manifest."
+  ]
+}

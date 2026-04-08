@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import random
+import time
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +17,9 @@ def execute_domain_simulation(
     params = task.get("parameters", {})
     seed = params.get("seed", 42)
     rng = random.Random(str(seed))
+    delay_sec = _coerce_float(params.get("simulate_delay_sec", 0.0), default=0.0, min_value=0.0, max_value=30.0)
+    if delay_sec > 0:
+        time.sleep(delay_sec)
 
     if domain == "markets":
         csv_rel_path = params.get("price_csv_path")
@@ -148,6 +152,14 @@ def execute_domain_simulation(
 def _coerce_int(value: Any, *, default: int, min_value: int, max_value: int) -> int:
     try:
         out = int(value)
+    except (TypeError, ValueError):
+        out = default
+    return max(min_value, min(max_value, out))
+
+
+def _coerce_float(value: Any, *, default: float, min_value: float, max_value: float) -> float:
+    try:
+        out = float(value)
     except (TypeError, ValueError):
         out = default
     return max(min_value, min(max_value, out))
