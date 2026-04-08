@@ -75,6 +75,13 @@ def build_parser() -> argparse.ArgumentParser:
     runs_list_parser.add_argument("--domain", type=str, required=False)
     runs_list_parser.add_argument("--contains", type=str, required=False)
 
+    runs_stats_parser = subparsers.add_parser(
+        "runs-stats",
+        help="Show aggregate run history stats.",
+    )
+    runs_stats_parser.add_argument("--limit", type=int, default=0)
+    runs_stats_parser.add_argument("--domain", type=str, required=False)
+
     mem_query_parser = subparsers.add_parser(
         "memory-query",
         help="Query indexed run metadata from SQLite memory store.",
@@ -206,6 +213,8 @@ def main(argv: list[str] | None = None) -> int:
                 domain=args.domain,
                 contains=args.contains,
             )
+        elif args.command == "runs-stats":
+            payload = engine.runs_stats(limit=args.limit, domain=args.domain)
         elif args.command == "memory-query":
             payload = engine.memory_query(
                 limit=args.limit,

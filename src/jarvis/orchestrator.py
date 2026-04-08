@@ -902,6 +902,76 @@ class JarvisEngine:
             "runs": rows,
         }
 
+    def runs_stats(
+        self,
+        *,
+        limit: int = 0,
+        domain: str | None = None,
+    ) -> dict[str, Any]:
+        self.store.ensure_layout()
+        domain_filter = domain.strip().lower() if isinstance(domain, str) and domain.strip() else None
+        run_dirs = [path for path in self.store.runs_dir.iterdir() if path.is_dir()]
+        run_dirs = sorted(run_dirs, key=lambda path: path.name, reverse=True)
+        if limit > 0:
+            safe_limit = max(1, min(int(limit), 5000))
+            run_dirs = run_dirs[:safe_limit]
+
+        counts_by_status: dict[str, int] = {}
+        counts_by_domain: dict[str, int] = {}
+        latest_timestamp = ""
+        earliest_timestamp = ""
+        total_scanned = 0
+
+        for run_dir in run_dirs:
+            meta_path = run_dir / "meta.json"
+            evidence_path = run_dir / "evidence_bundle.json"
+            if not meta_path.exists() or not evidence_path.exists():
+                continue
+
+            try:
+                meta = load_json_file(meta_path)
+                evidence = load_json_file(evidence_path)
+            except Exception:
+                continue
+
+            row_domain = str(meta.get("domain", evidence.get("domain", ""))).lower()
+            if domain_filter and row_domain != domain_filter:
+                continue
+
+            row_status = str(evidence.get("status", meta.get("status", ""))).upper()
+            timestamp = str(meta.get("timestamp_utc", evidence.get("timestamp_utc", "")))
+            total_scanned += 1
+
+            counts_by_status[row_status] = counts_by_status.get(row_status, 0) + 1
+            counts_by_domain[row_domain] = counts_by_domain.get(row_domain, 0) + 1
+
+            if timestamp:
+                if not latest_timestamp or timestamp > latest_timestamp:
+                    latest_timestamp = timestamp
+                if not earliest_timestamp or timestamp < earliest_timestamp:
+                    earliest_timestamp = timestamp
+
+        success_count = counts_by_status.get("SUCCESS", 0)
+        failed_count = counts_by_status.get("FAILED", 0)
+        finished = success_count + failed_count
+        success_rate_finished = (float(success_count) / float(finished)) if finished > 0 else 0.0
+
+        return {
+            "status": "ok",
+            "total_runs": total_scanned,
+            "counts_by_status": counts_by_status,
+            "counts_by_domain": counts_by_domain,
+            "success_count": success_count,
+            "failed_count": failed_count,
+            "success_rate_finished": round(success_rate_finished, 6),
+            "latest_timestamp_utc": latest_timestamp,
+            "earliest_timestamp_utc": earliest_timestamp,
+            "scope": {
+                "limit": limit,
+                "domain": domain_filter or "",
+            },
+        }
+
     def memory_query(
         self,
         *,

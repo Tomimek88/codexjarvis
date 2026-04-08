@@ -35,6 +35,7 @@
   - Run compare command: cross-run diff for status/hashes/metrics/artifacts
   - Run audit commands: `audit-run` and `audit-all` for file/hash/schema integrity validation
   - Run history listing command: `runs-list` with status/domain/text filters
+  - Run history aggregate command: `runs-stats` with status/domain success-rate summary
   - Queue runner v1: submit/list/get/work with retry-at-queue-level
   - Queue stats API/CLI (`queue-stats`) with retry/dead-failed counters
 

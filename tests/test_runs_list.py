@@ -69,6 +69,57 @@ class RunsListTests(unittest.TestCase):
             self.assertIn(out_fail["run_id"], ids_contains)
             self.assertNotIn(out_ok["run_id"], ids_contains)
 
+    def test_runs_stats_counts_success_and_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            engine = JarvisEngine(root)
+
+            success_task = {
+                "task_id": "task-runs-0101",
+                "objective": "stats success run",
+                "domain": "generic",
+                "requires_computation": True,
+                "allow_internet_research": True,
+                "strict_no_guessing": True,
+                "force_rerun": True,
+                "parameters": {"a": 1, "b": 2, "c": 3, "seed": 42},
+            }
+            fail_task = {
+                "task_id": "task-runs-0102",
+                "objective": "stats fail run timeout",
+                "domain": "generic",
+                "requires_computation": True,
+                "allow_internet_research": True,
+                "strict_no_guessing": True,
+                "force_rerun": True,
+                "parameters": {
+                    "a": 1,
+                    "b": 2,
+                    "c": 3,
+                    "seed": 42,
+                    "simulate_delay_sec": 1.2,
+                    "execution_policy": {
+                        "timeout_sec": 1,
+                        "max_retries": 0,
+                        "retry_delay_sec": 0.0,
+                    },
+                },
+            }
+
+            out_ok = engine.run(success_task, dry_run=False)
+            out_fail = engine.run(fail_task, dry_run=False)
+            self.assertEqual(out_ok["status"], "completed")
+            self.assertEqual(out_fail["status"], "failed")
+
+            stats = engine.runs_stats()
+            self.assertEqual(stats["status"], "ok")
+            self.assertGreaterEqual(stats["total_runs"], 2)
+            self.assertGreaterEqual(stats["success_count"], 1)
+            self.assertGreaterEqual(stats["failed_count"], 1)
+            self.assertTrue("generic" in stats["counts_by_domain"])
+            self.assertGreaterEqual(stats["success_rate_finished"], 0.0)
+            self.assertLessEqual(stats["success_rate_finished"], 1.0)
+
 
 if __name__ == "__main__":
     unittest.main()
