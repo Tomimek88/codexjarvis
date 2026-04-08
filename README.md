@@ -10,7 +10,7 @@ This repository now contains a working baseline for:
 - run artifact persistence
 - evidence bundle creation and validation
 - truth-layer claim/evidence validation (unsupported user claims are blocked)
-- research/source tracking with local files + optional URLs
+- research/source tracking with local files + optional URLs (JSON/CSV extraction support)
 - queue runner for asynchronous task processing
 - replay from stored runs
 - SQLite memory index + memo/semantic search for prior runs
@@ -178,6 +178,9 @@ jarvis --root <project_root> queue-work [--max-jobs 10] [--worker-id worker-1]
 
 - Add `parameters.research_refs` in task JSON (local paths, `local://...`, or URLs).
 - Research artifacts are hash-tracked and attached to the run evidence.
+- Structured local sources are normalized for reasoning:
+  - `.json` -> pretty JSON text
+  - `.csv` / `.tsv` -> tabular preview (header + sample rows)
 - URL fetch is best-effort and may fail if network is unavailable; failures are recorded in research manifest.
 
 ## Execution + Trace (Current)

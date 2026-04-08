@@ -23,6 +23,7 @@
   - first real markets engine: CSV-backed MA crossover backtest
   - Truth Layer v1: claim-evidence validator with automatic block on unsupported user claims
   - Research Layer v1: source collection + hashed source snapshots + per-run manifest
+  - Structured source extraction: JSON pretty-print + CSV/TSV tabular preview
   - Execution policy v1: timeout + retry control with execution manifest
   - Run trace v1: per-stage timeline persisted per run
   - Queue runner v1: submit/list/get/work with retry-at-queue-level

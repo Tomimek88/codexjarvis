@@ -37,6 +37,36 @@ class ResearchTests(unittest.TestCase):
             self.assertIn("research/src_001.txt", extra_text)
             self.assertIn(("research/src_001.txt", "raw"), artifacts)
 
+    def test_collect_structured_sources_with_extraction_modes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            docs = root / "docs"
+            docs.mkdir(parents=True, exist_ok=True)
+            (docs / "sample.json").write_text('{"alpha": 1, "beta": [2, 3]}', encoding="utf-8")
+            (docs / "sample.csv").write_text("a,b\n10,20\n30,40\n", encoding="utf-8")
+
+            task = {
+                "task_id": "task-r-0001b",
+                "objective": "collect structured local sources",
+                "domain": "generic",
+                "requires_computation": True,
+                "allow_internet_research": True,
+                "strict_no_guessing": True,
+                "parameters": {"research_refs": ["docs/sample.json", "docs/sample.csv"]},
+            }
+            bundle, _, extra_text, _ = collect_research_artifacts(
+                task=task,
+                project_root=root,
+                run_id="run_struct_001",
+            )
+
+            self.assertEqual(bundle["source_count"], 2)
+            modes = [item["extraction_mode"] for item in bundle["sources"]]
+            self.assertIn("json_pretty", modes)
+            self.assertIn("tabular_preview", modes)
+            self.assertIn('"alpha": 1', extra_text["research/src_001.txt"])
+            self.assertIn("table_preview:", extra_text["research/src_002.txt"])
+
     def test_orchestrator_persists_research_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
