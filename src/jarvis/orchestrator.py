@@ -1200,6 +1200,41 @@ class JarvisEngine:
             "rebuilt_entry_count": len(entries),
         }
 
+    def doctor(self) -> dict[str, Any]:
+        health = self.health()
+        cache = self.cache_verify(limit=200)
+        queue = self.queue_stats()
+        runs = self.runs_stats(limit=200)
+        audit = self.audit_all(limit=50, include_passed=False)
+
+        warnings: list[str] = []
+        if str(health.get("status", "")).lower() != "ok":
+            warnings.append("runtime_health_degraded")
+        if int(cache.get("invalid_count", 0)) > 0:
+            warnings.append("cache_invalid_entries_present")
+        queue_stats = queue.get("stats", {}) if isinstance(queue, dict) else {}
+        if int(queue_stats.get("dead_failed_count", 0)) > 0:
+            warnings.append("queue_dead_failed_jobs_present")
+        if int(audit.get("failed_count", 0)) > 0:
+            warnings.append("run_integrity_failures_present")
+
+        overall = "ok" if len(warnings) == 0 else "warning"
+        return {
+            "status": "ok",
+            "overall": overall,
+            "warning_count": len(warnings),
+            "warnings": warnings,
+            "health": health,
+            "cache_verify": cache,
+            "queue_stats": queue_stats,
+            "runs_stats": runs,
+            "audit_summary": {
+                "scanned_count": int(audit.get("scanned_count", 0)),
+                "failed_count": int(audit.get("failed_count", 0)),
+                "error_count": int(audit.get("error_count", 0)),
+            },
+        }
+
     def memory_query(
         self,
         *,

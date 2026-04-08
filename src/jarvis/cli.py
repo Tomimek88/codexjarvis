@@ -21,6 +21,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("health", help="Show runtime and storage health.")
+    subparsers.add_parser("doctor", help="Run consolidated system diagnostics.")
 
     run_parser = subparsers.add_parser("run", help="Run task from task JSON file.")
     run_parser.add_argument("--task-file", type=Path, required=True)
@@ -209,6 +210,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "health":
             payload = engine.health()
+        elif args.command == "doctor":
+            payload = engine.doctor()
         elif args.command == "run":
             payload = engine.run_from_file(args.task_file.resolve(), dry_run=False)
         elif args.command == "dry-run":

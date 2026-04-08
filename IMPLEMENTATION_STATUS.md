@@ -38,6 +38,7 @@
   - Run history listing command: `runs-list` with status/domain/text filters
   - Run history aggregate command: `runs-stats` with status/domain success-rate summary
   - Cache tooling: `cache-verify` and `cache-rebuild`
+  - Doctor command: consolidated diagnostic snapshot (`health` + cache + queue + run audit summary)
   - Queue runner v1: submit/list/get/work with retry-at-queue-level
   - Queue stats API/CLI (`queue-stats`) with retry/dead-failed counters
 

@@ -141,6 +141,7 @@ docker compose run --rm jarvis python -m jarvis run --root /app --task-file /app
 
 ```bash
 jarvis --root <project_root> health
+jarvis --root <project_root> doctor
 jarvis --root <project_root> dry-run --task-file <task.json>
 jarvis --root <project_root> run --task-file <task.json>
 jarvis --root <project_root> replay --run-id <run_id>
@@ -243,6 +244,15 @@ jarvis --root <project_root> queue-work [--max-jobs 10] [--worker-id worker-1]
 
 - `cache-verify` validates cache index entries against existing run metadata.
 - `cache-rebuild` reconstructs cache index from `data/runs/*` (default: SUCCESS runs only).
+
+## Doctor (Current)
+
+- `doctor` runs one consolidated diagnostics snapshot:
+  - runtime health
+  - cache validity
+  - queue status summary
+  - run stats
+  - run integrity audit summary
 
 ## Queue Runner (Current)
 
