@@ -393,6 +393,48 @@ class QueueTests(unittest.TestCase):
             self.assertGreaterEqual(int(cleaned["deleted_count"]), 1)
             self.assertFalse(result_abs.exists())
 
+    def test_queue_work_daemon_processes_and_stops_on_idle_threshold(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            engine = JarvisEngine(root)
+            engine.queue_submit(_base_task("task-q-0018"), dry_run=False, max_attempts=1)
+
+            out = engine.queue_work_daemon(
+                max_cycles=10,
+                poll_interval_sec=0.0,
+                max_jobs_per_cycle=1,
+                idle_stop_after=2,
+                worker_id="worker-daemon",
+            )
+            self.assertEqual(out["status"], "ok")
+            self.assertEqual(str(out["stop_reason"]), "idle_stop_after")
+            self.assertEqual(int(out["idle_cycles_at_end"]), 2)
+            self.assertGreaterEqual(int(out["processed_total"]), 1)
+            self.assertEqual(int(out["cycles_run"]), 3)
+
+            stats = engine.queue_stats()
+            counts = stats["stats"]["status_counts"]
+            self.assertEqual(counts.get("QUEUED", 0), 0)
+            self.assertEqual(counts.get("SUCCESS", 0), 1)
+
+    def test_queue_work_daemon_respects_max_cycles_without_idle_stop(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            engine = JarvisEngine(root)
+
+            out = engine.queue_work_daemon(
+                max_cycles=3,
+                poll_interval_sec=0.0,
+                max_jobs_per_cycle=1,
+                idle_stop_after=0,
+                worker_id="worker-daemon-limit",
+            )
+            self.assertEqual(out["status"], "ok")
+            self.assertEqual(str(out["stop_reason"]), "max_cycles_limit")
+            self.assertEqual(int(out["cycles_run"]), 3)
+            self.assertEqual(int(out["processed_total"]), 0)
+            self.assertEqual(int(out["idle_cycles_at_end"]), 3)
+
 
 if __name__ == "__main__":
     unittest.main()

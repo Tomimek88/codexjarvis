@@ -376,6 +376,22 @@ def build_parser() -> argparse.ArgumentParser:
         help="Max processed jobs in this call. Use 0 to process until idle (with internal safety cap).",
     )
     queue_work_parser.add_argument("--worker-id", type=str, required=False)
+
+    queue_work_daemon_parser = subparsers.add_parser(
+        "queue-work-daemon",
+        help="Continuously poll and process queue jobs.",
+    )
+    queue_work_daemon_parser.add_argument("--max-cycles", type=int, default=0)
+    queue_work_daemon_parser.add_argument("--poll-interval-sec", type=float, default=2.0)
+    queue_work_daemon_parser.add_argument("--max-jobs-per-cycle", type=int, default=10)
+    queue_work_daemon_parser.add_argument(
+        "--idle-stop-after",
+        type=int,
+        default=0,
+        help="Stop after N consecutive idle cycles (0 = keep polling until max-cycles/safety limit).",
+    )
+    queue_work_daemon_parser.add_argument("--worker-id", type=str, required=False)
+    queue_work_daemon_parser.add_argument("--include-cycle-results", action="store_true")
     return parser
 
 
@@ -568,6 +584,15 @@ def main(argv: list[str] | None = None) -> int:
             payload = engine.queue_work_once(worker_id=args.worker_id)
         elif args.command == "queue-work":
             payload = engine.queue_work(max_jobs=args.max_jobs, worker_id=args.worker_id)
+        elif args.command == "queue-work-daemon":
+            payload = engine.queue_work_daemon(
+                max_cycles=args.max_cycles,
+                poll_interval_sec=args.poll_interval_sec,
+                max_jobs_per_cycle=args.max_jobs_per_cycle,
+                idle_stop_after=args.idle_stop_after,
+                worker_id=args.worker_id,
+                include_cycle_results=bool(args.include_cycle_results),
+            )
         else:  # pragma: no cover
             parser.error(f"Unsupported command: {args.command}")
             return 2

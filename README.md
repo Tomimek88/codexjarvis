@@ -183,9 +183,11 @@ jarvis --root <project_root> queue-clean-results [--limit 0] [--dry-run]
 jarvis --root <project_root> queue-cancel --job-id <job_id> [--reason "..."]
 jarvis --root <project_root> queue-work-once [--worker-id worker-1]
 jarvis --root <project_root> queue-work [--max-jobs 10] [--worker-id worker-1]
+jarvis --root <project_root> queue-work-daemon [--max-cycles 0] [--poll-interval-sec 2.0] [--max-jobs-per-cycle 10] [--idle-stop-after 0] [--worker-id worker-1] [--include-cycle-results]
 ```
 
 Tip: `queue-work --max-jobs 0` processes jobs until queue becomes idle (bounded by internal safety cap).
+Tip: `queue-work-daemon` keeps polling queue between cycles and is suitable for long-running local worker mode.
 Tip: use `queue-prune --dry-run` to preview cleanup without deleting jobs/files.
 Tip: run `queue-clean-results --dry-run` to preview orphan result-file cleanup.
 Tip: run `memory-clean --dry-run` to preview stale memory-index cleanup.
@@ -311,9 +313,10 @@ Tip: run `memory-clean --dry-run` to preview stale memory-index cleanup.
 - `queue-stats` provides aggregate status counts and retry/dead-failed indicators.
 - `queue-requeue-failed` moves failed jobs back into `QUEUED` for manual replay.
 - `queue-cancel` marks a queued/running job as `CANCELLED`.
+- `queue-work-daemon` runs repeated worker cycles with configurable polling and idle-stop behavior.
 - Submit now, execute later pattern:
   1. `queue-submit`
-  2. `queue-work-once` or `queue-work`
+  2. `queue-work-once`, `queue-work`, or `queue-work-daemon`
   3. `queue-get` / `queue-list`
 
 ## Evidence-First Guarantee in This Scaffold

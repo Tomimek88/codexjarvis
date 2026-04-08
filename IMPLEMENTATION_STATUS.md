@@ -59,6 +59,7 @@
   - Queue orphan-result cleanup command: `queue-clean-results` (supports `--dry-run`)
   - Queue cancellation command: `queue-cancel`
   - Queue worker unlimited drain mode: `queue-work --max-jobs 0`
+  - Queue daemon worker mode: `queue-work-daemon` with poll interval + idle-stop controls
   - Memory index audit command: `memory-audit`
   - Memory stale-index cleanup command: `memory-clean` (supports `--dry-run`)
   - Doctor memory-index stale-reference warning + autofix cleanup integration

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import platform
 import shutil
+import time
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -2316,6 +2317,90 @@ class JarvisEngine:
             "stop_reason": stop_reason,
             "results": outputs,
         }
+
+    def queue_work_daemon(
+        self,
+        *,
+        max_cycles: int = 0,
+        poll_interval_sec: float = 2.0,
+        max_jobs_per_cycle: int = 10,
+        idle_stop_after: int = 0,
+        worker_id: str | None = None,
+        include_cycle_results: bool = False,
+    ) -> dict[str, Any]:
+        requested_max_cycles = int(max_cycles)
+        unlimited_cycles = requested_max_cycles <= 0
+        effective_max_cycles = (
+            50000 if unlimited_cycles else max(1, min(requested_max_cycles, 100000))
+        )
+        safe_poll_interval = max(0.0, min(float(poll_interval_sec), 60.0))
+        safe_max_jobs_per_cycle = max(0, min(int(max_jobs_per_cycle), 10000))
+        safe_idle_stop_after = max(0, min(int(idle_stop_after), 100000))
+        wid = worker_id or f"worker_{uuid4().hex[:8]}"
+
+        cycles_run = 0
+        processed_total = 0
+        idle_cycles = 0
+        stop_reason = "max_cycles_limit"
+        interrupted = False
+        cycle_summaries: list[dict[str, Any]] = []
+        cycle_results: list[dict[str, Any]] = []
+
+        try:
+            while cycles_run < effective_max_cycles:
+                out = self.queue_work(max_jobs=safe_max_jobs_per_cycle, worker_id=wid)
+                cycles_run += 1
+                cycle_processed = max(0, int(out.get("processed", 0)))
+                processed_total += cycle_processed
+                if cycle_processed == 0:
+                    idle_cycles += 1
+                else:
+                    idle_cycles = 0
+
+                cycle_summaries.append(
+                    {
+                        "cycle": cycles_run,
+                        "processed": cycle_processed,
+                        "stop_reason": str(out.get("stop_reason", "")),
+                        "worker_id": str(out.get("worker_id", wid)),
+                    }
+                )
+                if include_cycle_results:
+                    cycle_results.append(out)
+
+                if safe_idle_stop_after > 0 and idle_cycles >= safe_idle_stop_after:
+                    stop_reason = "idle_stop_after"
+                    break
+
+                if cycles_run >= effective_max_cycles:
+                    stop_reason = "safety_limit" if unlimited_cycles else "max_cycles_limit"
+                    break
+
+                if safe_poll_interval > 0.0:
+                    time.sleep(safe_poll_interval)
+        except KeyboardInterrupt:  # pragma: no cover
+            interrupted = True
+            stop_reason = "interrupted"
+
+        payload = {
+            "status": "ok",
+            "worker_id": wid,
+            "requested_max_cycles": requested_max_cycles,
+            "effective_max_cycles": effective_max_cycles,
+            "unlimited_cycles": unlimited_cycles,
+            "poll_interval_sec": safe_poll_interval,
+            "max_jobs_per_cycle": safe_max_jobs_per_cycle,
+            "idle_stop_after": safe_idle_stop_after,
+            "cycles_run": cycles_run,
+            "processed_total": processed_total,
+            "idle_cycles_at_end": idle_cycles,
+            "stop_reason": stop_reason,
+            "interrupted": interrupted,
+            "cycle_summaries": cycle_summaries[:1000],
+        }
+        if include_cycle_results:
+            payload["cycle_results"] = cycle_results
+        return payload
 
     def _validate_task_claims(
         self,
