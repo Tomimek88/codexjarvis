@@ -354,6 +354,45 @@ class QueueTests(unittest.TestCase):
             self.assertEqual(str(fetched["status"]), "SUCCESS")
             self.assertTrue((root / success_result).exists())
 
+    def test_queue_clean_results_removes_orphan_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            engine = JarvisEngine(root)
+
+            sub = engine.queue_submit(_base_task("task-q-0017"), dry_run=False, max_attempts=1)
+            job_id = sub["job"]["job_id"]
+            out = engine.queue_work_once(worker_id="worker-clean-results")
+            self.assertEqual(out["status"], "job_completed")
+            job = engine.queue_get(job_id)["job"]
+            result_rel = str(job.get("result_path", "")).strip()
+            result_abs = root / result_rel
+            self.assertTrue(result_abs.exists())
+
+            pruned = engine.queue_prune(
+                limit=10,
+                statuses=["SUCCESS"],
+                older_than_sec=0,
+                delete_results=False,
+            )
+            self.assertEqual(pruned["status"], "ok")
+            self.assertEqual(int(pruned["pruned_count"]), 1)
+            self.assertTrue(result_abs.exists())
+            with self.assertRaises(ValueError):
+                engine.queue_get(job_id)
+
+            preview = engine.queue_clean_results(dry_run=True)
+            self.assertEqual(preview["status"], "ok")
+            self.assertTrue(bool(preview["dry_run"]))
+            self.assertGreaterEqual(int(preview["orphan_count"]), 1)
+            self.assertEqual(int(preview["deleted_count"]), 0)
+            self.assertTrue(result_abs.exists())
+
+            cleaned = engine.queue_clean_results(dry_run=False)
+            self.assertEqual(cleaned["status"], "ok")
+            self.assertGreaterEqual(int(cleaned["orphan_count"]), 1)
+            self.assertGreaterEqual(int(cleaned["deleted_count"]), 1)
+            self.assertFalse(result_abs.exists())
+
 
 if __name__ == "__main__":
     unittest.main()

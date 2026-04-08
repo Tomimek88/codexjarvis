@@ -53,6 +53,7 @@
   - Queue stale-running inspect command: `queue-stale-running`
   - Queue stale-running recovery command: `queue-recover-running`
   - Queue prune command: `queue-prune` (supports `--dry-run` preview)
+  - Queue orphan-result cleanup command: `queue-clean-results` (supports `--dry-run`)
   - Queue cancellation command: `queue-cancel`
   - Queue worker unlimited drain mode: `queue-work --max-jobs 0`
 

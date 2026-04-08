@@ -676,6 +676,60 @@ class QueueStore:
             "jobs": pruned_jobs,
         }
 
+    def clean_orphan_results(
+        self,
+        *,
+        limit: int = 0,
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        self.ensure_schema()
+        safe_limit = max(1, min(int(limit), 100000)) if int(limit) > 0 else 0
+        files = sorted(
+            [path for path in self.results_dir.glob("*.json") if path.is_file()],
+            key=lambda p: p.name.lower(),
+        )
+        if safe_limit > 0:
+            files = files[:safe_limit]
+
+        con = self._connect()
+        try:
+            rows = con.execute(
+                """
+                SELECT result_path
+                FROM jobs
+                WHERE result_path IS NOT NULL
+                  AND result_path != ''
+                """
+            ).fetchall()
+        finally:
+            con.close()
+
+        referenced: set[str] = set()
+        for row in rows:
+            value = str(row["result_path"] or "").replace("\\", "/").strip()
+            if value:
+                referenced.add(value)
+
+        orphan_files: list[str] = []
+        deleted_count = 0
+        for path in files:
+            rel = str(path.relative_to(self.project_root).as_posix())
+            if rel in referenced:
+                continue
+            orphan_files.append(rel)
+            if not dry_run:
+                path.unlink(missing_ok=True)
+                deleted_count += 1
+
+        return {
+            "requested_limit": safe_limit,
+            "dry_run": bool(dry_run),
+            "scanned_count": len(files),
+            "orphan_count": len(orphan_files),
+            "deleted_count": deleted_count,
+            "files": orphan_files[:500],
+        }
+
     def _write_result(self, job_id: str, payload: dict[str, Any]) -> str:
         self.results_dir.mkdir(parents=True, exist_ok=True)
         path = self.results_dir / f"{job_id}.json"

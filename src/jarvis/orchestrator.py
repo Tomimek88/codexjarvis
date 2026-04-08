@@ -2109,6 +2109,18 @@ class JarvisEngine:
             "jobs": out.get("jobs", []),
         }
 
+    def queue_clean_results(self, *, limit: int = 0, dry_run: bool = False) -> dict[str, Any]:
+        out = self.queue.clean_orphan_results(limit=limit, dry_run=dry_run)
+        return {
+            "status": "ok",
+            "requested_limit": out.get("requested_limit", 0),
+            "dry_run": bool(out.get("dry_run", False)),
+            "scanned_count": out.get("scanned_count", 0),
+            "orphan_count": out.get("orphan_count", 0),
+            "deleted_count": out.get("deleted_count", 0),
+            "files": out.get("files", []),
+        }
+
     def queue_cancel(self, job_id: str, *, reason: str = "") -> dict[str, Any]:
         job = self.queue.cancel_job(job_id, reason=reason)
         return {"status": "ok", "job": job}

@@ -288,6 +288,13 @@ def build_parser() -> argparse.ArgumentParser:
     queue_prune_parser.add_argument("--keep-result-files", action="store_true")
     queue_prune_parser.add_argument("--dry-run", action="store_true")
 
+    queue_clean_results_parser = subparsers.add_parser(
+        "queue-clean-results",
+        help="Delete orphan queue result files not referenced by any job.",
+    )
+    queue_clean_results_parser.add_argument("--limit", type=int, default=0)
+    queue_clean_results_parser.add_argument("--dry-run", action="store_true")
+
     queue_cancel_parser = subparsers.add_parser(
         "queue-cancel",
         help="Cancel one queue job by id.",
@@ -477,6 +484,11 @@ def main(argv: list[str] | None = None) -> int:
                 statuses=args.statuses,
                 older_than_sec=args.older_than_sec,
                 delete_results=not bool(args.keep_result_files),
+                dry_run=bool(args.dry_run),
+            )
+        elif args.command == "queue-clean-results":
+            payload = engine.queue_clean_results(
+                limit=args.limit,
                 dry_run=bool(args.dry_run),
             )
         elif args.command == "queue-cancel":

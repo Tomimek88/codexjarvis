@@ -177,6 +177,7 @@ jarvis --root <project_root> queue-requeue-failed [--limit 20] [--keep-attempts]
 jarvis --root <project_root> queue-stale-running [--limit 20] [--max-age-sec 300]
 jarvis --root <project_root> queue-recover-running [--limit 20] [--max-age-sec 300] [--force-requeue] [--reset-attempts]
 jarvis --root <project_root> queue-prune [--limit 100] [--status SUCCESS] [--status FAILED] [--status CANCELLED] [--older-than-sec 0] [--keep-result-files] [--dry-run]
+jarvis --root <project_root> queue-clean-results [--limit 0] [--dry-run]
 jarvis --root <project_root> queue-cancel --job-id <job_id> [--reason "..."]
 jarvis --root <project_root> queue-work-once [--worker-id worker-1]
 jarvis --root <project_root> queue-work [--max-jobs 10] [--worker-id worker-1]
@@ -184,6 +185,7 @@ jarvis --root <project_root> queue-work [--max-jobs 10] [--worker-id worker-1]
 
 Tip: `queue-work --max-jobs 0` processes jobs until queue becomes idle (bounded by internal safety cap).
 Tip: use `queue-prune --dry-run` to preview cleanup without deleting jobs/files.
+Tip: run `queue-clean-results --dry-run` to preview orphan result-file cleanup.
 
 ## Memory Layer (Current)
 
