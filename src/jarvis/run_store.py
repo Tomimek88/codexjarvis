@@ -70,6 +70,9 @@ class RunStore:
         result_payload: dict[str, Any],
         summary_payload: dict[str, Any],
         evidence_bundle: dict[str, Any],
+        extra_json_files: dict[str, dict[str, Any]] | None = None,
+        extra_text_files: dict[str, str] | None = None,
+        extra_artifact_candidates: list[tuple[str, str]] | None = None,
     ) -> list[dict[str, str]]:
         run_dir = self.run_path(run_id)
         results_dir = run_dir / "results"
@@ -89,13 +92,25 @@ class RunStore:
         self._write_text(run_dir / "stderr.log", stderr_text)
         self._write_json(results_dir / "result.json", result_payload)
 
+        if extra_json_files:
+            for rel_path, payload in extra_json_files.items():
+                self._write_json(run_dir / rel_path, payload)
+        if extra_text_files:
+            for rel_path, text in extra_text_files.items():
+                self._write_text(run_dir / rel_path, text)
+
         artifact_candidates = [
             (results_dir / "result.json", "raw"),
             (run_dir / "summary.json", "report"),
         ]
+        if extra_artifact_candidates:
+            for rel_path, kind in extra_artifact_candidates:
+                artifact_candidates.append((run_dir / rel_path, kind))
 
         artifacts: list[dict[str, str]] = []
         for file_path, kind in artifact_candidates:
+            if not file_path.exists():
+                continue
             artifacts.append(
                 {
                     "path": str(file_path.relative_to(self.project_root).as_posix()),

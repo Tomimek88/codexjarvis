@@ -1,0 +1,72 @@
+from __future__ import annotations
+
+import tempfile
+import unittest
+from pathlib import Path
+
+from jarvis.orchestrator import JarvisEngine
+from jarvis.research import collect_research_artifacts
+
+
+class ResearchTests(unittest.TestCase):
+    def test_collect_local_research_source(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            doc_path = root / "docs" / "note.txt"
+            doc_path.parent.mkdir(parents=True, exist_ok=True)
+            doc_path.write_text("hello research source\n", encoding="utf-8")
+
+            task = {
+                "task_id": "task-r-0001",
+                "objective": "collect local sources",
+                "domain": "generic",
+                "requires_computation": True,
+                "allow_internet_research": True,
+                "strict_no_guessing": True,
+                "parameters": {"research_refs": ["docs/note.txt"]},
+            }
+            bundle, extra_json, extra_text, artifacts = collect_research_artifacts(
+                task=task,
+                project_root=root,
+                run_id="run_abc12345",
+            )
+
+            self.assertEqual(bundle["source_count"], 1)
+            self.assertEqual(len(bundle["errors"]), 0)
+            self.assertIn("research/sources_manifest.json", extra_json)
+            self.assertIn("research/src_001.txt", extra_text)
+            self.assertIn(("research/src_001.txt", "raw"), artifacts)
+
+    def test_orchestrator_persists_research_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source_path = root / "docs" / "plan.txt"
+            source_path.parent.mkdir(parents=True, exist_ok=True)
+            source_path.write_text("phase steps and assumptions", encoding="utf-8")
+
+            engine = JarvisEngine(root)
+            task = {
+                "task_id": "task-r-0002",
+                "objective": "run with research artifacts",
+                "domain": "generic",
+                "requires_computation": True,
+                "allow_internet_research": True,
+                "strict_no_guessing": True,
+                "parameters": {
+                    "a": 1,
+                    "b": 2,
+                    "c": 3,
+                    "seed": 42,
+                    "research_refs": ["docs/plan.txt"],
+                },
+            }
+            out = engine.run(task, dry_run=False)
+            artifacts = out["evidence_bundle"]["artifacts"]
+            paths = [item["path"] for item in artifacts]
+            self.assertTrue(any(path.endswith("/research/sources_manifest.json") for path in paths))
+            self.assertTrue(any(path.endswith("/research/src_001.txt") for path in paths))
+            self.assertEqual(out["research_bundle"]["source_count"], 1)
+
+
+if __name__ == "__main__":
+    unittest.main()

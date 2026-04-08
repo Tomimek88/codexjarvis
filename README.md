@@ -10,6 +10,7 @@ This repository now contains a working baseline for:
 - run artifact persistence
 - evidence bundle creation and validation
 - truth-layer claim/evidence validation (unsupported user claims are blocked)
+- research/source tracking with local files + optional URLs
 - replay from stored runs
 - SQLite memory index for prior runs and artifacts
 - bootstrap scripts for local setup
@@ -34,6 +35,7 @@ src/jarvis/
   hashing.py                # Hashing and cache key
   memory_db.py              # SQLite long-term run index
   orchestrator.py           # Planner/executor baseline
+  research.py               # Source collection + tracking
   run_store.py              # Persistent run and cache index storage
   simulator.py              # Deterministic placeholder domain engines
 scripts/
@@ -41,6 +43,7 @@ scripts/
   bootstrap.sh              # Linux/macOS setup
 examples/tasks/
   generic_sum_task.json     # Smoke task
+  generic_research_task.json
   generic_truth_block_task.json
   markets_backtest_task.json
 examples/data/markets/
@@ -97,6 +100,17 @@ $env:PYTHONPATH='C:\Users\Tomino\Desktop\codexjarvis\src'
 
 This should return `status=blocked_by_truth_layer` and message `Nevim, musim to nasimulovat.`.
 
+Research/source tracking example:
+
+```powershell
+$env:PYTHONPATH='C:\Users\Tomino\Desktop\codexjarvis\src'
+.\.venv\Scripts\python.exe -m jarvis --root C:\Users\Tomino\Desktop\codexjarvis run --task-file C:\Users\Tomino\Desktop\codexjarvis\examples\tasks\generic_research_task.json
+```
+
+This run stores:
+- `data/runs/<run_id>/research/sources_manifest.json`
+- `data/runs/<run_id>/research/src_001.txt` (and more sources if provided)
+
 ## Docker Option
 
 If Docker Desktop is available:
@@ -138,6 +152,12 @@ jarvis --root <project_root> memory-index --run-id <run_id>
 - If any user claim lacks resolvable evidence refs, the run output is blocked with:
   - `status: blocked_by_truth_layer`
   - `message: Nevim, musim to nasimulovat.`
+
+## Research Layer (Current)
+
+- Add `parameters.research_refs` in task JSON (local paths, `local://...`, or URLs).
+- Research artifacts are hash-tracked and attached to the run evidence.
+- URL fetch is best-effort and may fail if network is unavailable; failures are recorded in research manifest.
 
 ## Evidence-First Guarantee in This Scaffold
 

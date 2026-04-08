@@ -9,6 +9,7 @@ from .constants import FALLBACK_NO_GUESS
 from .contracts import ValidationError, load_json_file, validate_evidence_bundle, validate_task_request
 from .hashing import compute_cache_key, compute_code_hash, sha256_object
 from .memory_db import MemoryStore
+from .research import collect_research_artifacts
 from .run_store import RunStore
 from .simulator import execute_domain_simulation
 from .truth_layer import (
@@ -98,6 +99,7 @@ class JarvisEngine:
                     if self.memory.get_run(cached_run_id) is None:
                         self.index_run(cached_run_id)
                     claim_validation = self._validate_task_claims(task, cached_bundle)
+                    research_bundle = self._load_run_research_bundle(cached_run_id)
                     if has_unsupported_user_claims(claim_validation):
                         return {
                             "task_id": task["task_id"],
@@ -107,6 +109,7 @@ class JarvisEngine:
                             "run_id": cached_run_id,
                             "evidence_bundle": cached_bundle,
                             "claim_validation": claim_validation,
+                            "research_bundle": research_bundle,
                         }
                     return {
                         "task_id": task["task_id"],
@@ -115,10 +118,21 @@ class JarvisEngine:
                         "run_id": cached_run_id,
                         "evidence_bundle": cached_bundle,
                         "claim_validation": claim_validation,
+                        "research_bundle": research_bundle,
                     }
 
         run_id = self.store.new_run_id()
         run_timestamp = datetime.now(timezone.utc).isoformat()
+        (
+            research_bundle,
+            research_json_files,
+            research_text_files,
+            research_artifact_candidates,
+        ) = collect_research_artifacts(
+            task=task,
+            project_root=self.project_root,
+            run_id=run_id,
+        )
 
         if dry_run:
             result_payload = {
@@ -126,11 +140,18 @@ class JarvisEngine:
                 "objective": task["objective"],
                 "result": {"dry_run": True},
                 "metrics": {"dry_run": True},
+                "research": {
+                    "source_count": research_bundle.get("source_count", 0),
+                    "error_count": len(research_bundle.get("errors", [])),
+                },
             }
             summary_payload = {
                 "headline": f"Dry run succeeded for task {task['task_id']}",
                 "key_metrics": {"dry_run": True},
-                "caveats": ["No domain engine was executed in dry run mode."],
+                "caveats": [
+                    "No domain engine was executed in dry run mode.",
+                    f"Research sources collected: {research_bundle.get('source_count', 0)}",
+                ],
             }
             stdout_text = "Dry run completed.\n"
             stderr_text = ""
@@ -153,6 +174,11 @@ class JarvisEngine:
                 stderr_text = f"{type(exc).__name__}: {exc}\n"
                 status = "FAILED"
 
+        result_payload["research"] = {
+            "source_count": research_bundle.get("source_count", 0),
+            "error_count": len(research_bundle.get("errors", [])),
+        }
+
         meta = {
             "run_id": run_id,
             "task_id": task["task_id"],
@@ -161,6 +187,7 @@ class JarvisEngine:
             "timestamp_utc": run_timestamp,
             "status": status,
             "cache_key": cache_key,
+            "research_source_count": research_bundle.get("source_count", 0),
         }
         input_manifest = {
             "input_refs": task.get("input_refs", []),
@@ -194,6 +221,9 @@ class JarvisEngine:
             result_payload=result_payload,
             summary_payload=summary_payload,
             evidence_bundle=placeholder_bundle,
+            extra_json_files=research_json_files,
+            extra_text_files=research_text_files,
+            extra_artifact_candidates=research_artifact_candidates,
         )
 
         final_bundle = {
@@ -223,6 +253,9 @@ class JarvisEngine:
             result_payload=result_payload,
             summary_payload=summary_payload,
             evidence_bundle=final_bundle,
+            extra_json_files=research_json_files,
+            extra_text_files=research_text_files,
+            extra_artifact_candidates=research_artifact_candidates,
         )
 
         if status == "SUCCESS" and not dry_run:
@@ -256,6 +289,7 @@ class JarvisEngine:
                 "run_id": run_id,
                 "evidence_bundle": final_bundle,
                 "claim_validation": claim_validation,
+                "research_bundle": research_bundle,
             }
 
         return {
@@ -265,6 +299,7 @@ class JarvisEngine:
             "run_id": run_id,
             "evidence_bundle": final_bundle,
             "claim_validation": claim_validation,
+            "research_bundle": research_bundle,
         }
 
     def run_from_file(self, task_file: Path, *, dry_run: bool = False) -> dict[str, Any]:
@@ -333,6 +368,12 @@ class JarvisEngine:
         auto_claims = build_metric_claims(evidence_bundle.get("metrics", {}))
         user_claims = normalize_user_claims(task.get("parameters", {}).get("claims"))
         return validate_claims(claims=auto_claims + user_claims, evidence_bundle=evidence_bundle)
+
+    def _load_run_research_bundle(self, run_id: str) -> dict[str, Any]:
+        manifest_path = self.store.run_path(run_id) / "research" / "sources_manifest.json"
+        if not manifest_path.exists():
+            return {"source_count": 0, "sources": [], "errors": []}
+        return load_json_file(manifest_path)
 
 
 def _is_writable(path: Path) -> bool:

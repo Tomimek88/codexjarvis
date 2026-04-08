@@ -1,0 +1,30 @@
+{
+  "task_id": "task-research-0001",
+  "objective": "Collect local research sources and run deterministic generic compute.",
+  "domain": "generic",
+  "requires_computation": true,
+  "allow_internet_research": true,
+  "strict_no_guessing": true,
+  "force_rerun": false,
+  "input_refs": [
+    {
+      "name": "constitution-doc",
+      "uri": "local://SYSTEM_CONSTITUTION.md"
+    }
+  ],
+  "parameters": {
+    "a": 2,
+    "b": 3,
+    "c": 4,
+    "seed": 42,
+    "research_refs": [
+      "SYSTEM_CONSTITUTION.md",
+      "MEMORY_POLICY.md"
+    ],
+    "research_max_chars": 8000
+  },
+  "acceptance_criteria": [
+    "Run must include research manifest artifact.",
+    "Run must include source snapshot artifacts."
+  ]
+}

@@ -20,6 +20,7 @@
   - deterministic cache key according to memory policy fields
   - first real markets engine: CSV-backed MA crossover backtest
   - Truth Layer v1: claim-evidence validator with automatic block on unsupported user claims
+  - Research Layer v1: source collection + hashed source snapshots + per-run manifest
 
 ## Current known external blockers on this PC
 
@@ -34,7 +35,7 @@ Python runtime execution and tests are now passing via local venv.
    - chemistry: RDKit
    - physics/CFD: OpenFOAM adapter
    - markets: backtesting adapter
-2. Add retrieval + source tracking layer (internet/local docs) with provenance records.
+2. Expand retrieval connectors (APIs, PDFs, structured web extraction) with stronger provenance metadata.
 3. Add claim-to-evidence validator (truth layer gate).
 4. Add sandbox resource policies and job queue runner.
 5. Add vector memory retrieval APIs and semantic indexing pipeline.
