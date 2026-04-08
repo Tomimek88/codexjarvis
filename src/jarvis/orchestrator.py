@@ -665,6 +665,9 @@ class JarvisEngine:
     def queue_get(self, job_id: str) -> dict[str, Any]:
         return {"status": "ok", "job": self.queue.get_job(job_id)}
 
+    def queue_stats(self) -> dict[str, Any]:
+        return {"status": "ok", "stats": self.queue.stats()}
+
     def queue_work_once(self, *, worker_id: str | None = None) -> dict[str, Any]:
         wid = worker_id or f"worker_{uuid4().hex[:8]}"
         job = self.queue.claim_next_job(wid)

@@ -76,6 +76,55 @@ class QueueTests(unittest.TestCase):
             fetched = engine.queue_get(job_id)
             self.assertEqual(fetched["job"]["status"], "FAILED")
 
+    def test_queue_stats_for_success_and_failed_jobs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            engine = JarvisEngine(root)
+
+            engine.queue_submit(_base_task("task-q-0003"), dry_run=False, max_attempts=1)
+            task_fail = _base_task("task-q-0004")
+            task_fail["parameters"]["simulate_delay_sec"] = 1.2
+            task_fail["parameters"]["execution_policy"] = {
+                "timeout_sec": 1,
+                "max_retries": 0,
+                "retry_delay_sec": 0.0,
+            }
+            engine.queue_submit(task_fail, dry_run=False, max_attempts=1)
+
+            engine.queue_work(max_jobs=10, worker_id="worker-stats")
+
+            stats = engine.queue_stats()
+            self.assertEqual(stats["status"], "ok")
+            counts = stats["stats"]["status_counts"]
+            self.assertEqual(stats["stats"]["total_jobs"], 2)
+            self.assertEqual(counts["SUCCESS"], 1)
+            self.assertEqual(counts["FAILED"], 1)
+            self.assertEqual(stats["stats"]["retry_queued_count"], 0)
+            self.assertEqual(stats["stats"]["dead_failed_count"], 1)
+
+    def test_queue_stats_tracks_retry_queued(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            engine = JarvisEngine(root)
+            task = _base_task("task-q-0005")
+            task["parameters"]["simulate_delay_sec"] = 1.2
+            task["parameters"]["execution_policy"] = {
+                "timeout_sec": 1,
+                "max_retries": 0,
+                "retry_delay_sec": 0.0,
+            }
+            engine.queue_submit(task, dry_run=False, max_attempts=2)
+
+            first = engine.queue_work_once(worker_id="worker-stats")
+            self.assertEqual(first["status"], "job_failed")
+            self.assertTrue(first["requeued"])
+
+            stats = engine.queue_stats()
+            self.assertEqual(stats["status"], "ok")
+            counts = stats["stats"]["status_counts"]
+            self.assertEqual(counts["QUEUED"], 1)
+            self.assertEqual(stats["stats"]["retry_queued_count"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

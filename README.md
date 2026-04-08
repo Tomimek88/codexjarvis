@@ -155,6 +155,7 @@ jarvis --root <project_root> memory-reindex-all [--limit 0] [--include-failed]
 jarvis --root <project_root> queue-submit --task-file <task.json> [--dry-run] [--max-attempts 1]
 jarvis --root <project_root> queue-list [--status QUEUED] [--limit 20]
 jarvis --root <project_root> queue-get --job-id <job_id>
+jarvis --root <project_root> queue-stats
 jarvis --root <project_root> queue-work-once [--worker-id worker-1]
 jarvis --root <project_root> queue-work [--max-jobs 10] [--worker-id worker-1]
 ```
@@ -211,6 +212,7 @@ jarvis --root <project_root> queue-work [--max-jobs 10] [--worker-id worker-1]
 
 - Queue state is stored in `data/queue/queue.db`.
 - Job results are stored in `data/queue/results/<job_id>.json`.
+- `queue-stats` provides aggregate status counts and retry/dead-failed indicators.
 - Submit now, execute later pattern:
   1. `queue-submit`
   2. `queue-work-once` or `queue-work`

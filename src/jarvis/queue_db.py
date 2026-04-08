@@ -245,6 +245,69 @@ class QueueStore:
             out.append(item)
         return out
 
+    def stats(self) -> dict[str, Any]:
+        self.ensure_schema()
+        con = self._connect()
+        try:
+            grouped = con.execute(
+                """
+                SELECT status, COUNT(*) AS cnt
+                FROM jobs
+                GROUP BY status
+                """
+            ).fetchall()
+            totals = con.execute(
+                """
+                SELECT
+                  COUNT(*) AS total_jobs,
+                  COALESCE(AVG(attempts), 0.0) AS avg_attempts_all,
+                  COALESCE(AVG(CASE WHEN status IN ('SUCCESS', 'FAILED') THEN attempts END), 0.0) AS avg_attempts_finished,
+                  MIN(CASE WHEN status = 'QUEUED' THEN created_at_utc END) AS oldest_queued_at_utc,
+                  MAX(created_at_utc) AS newest_created_at_utc
+                FROM jobs
+                """
+            ).fetchone()
+            retry_queued = con.execute(
+                """
+                SELECT COUNT(*) AS retry_queued_count
+                FROM jobs
+                WHERE status = 'QUEUED'
+                  AND attempts > 0
+                  AND attempts < max_attempts
+                """
+            ).fetchone()
+            dead_failed = con.execute(
+                """
+                SELECT COUNT(*) AS dead_failed_count
+                FROM jobs
+                WHERE status = 'FAILED'
+                  AND attempts >= max_attempts
+                """
+            ).fetchone()
+        finally:
+            con.close()
+
+        status_counts = {
+            "QUEUED": 0,
+            "RUNNING": 0,
+            "SUCCESS": 0,
+            "FAILED": 0,
+        }
+        for row in grouped:
+            status = str(row["status"])
+            status_counts[status] = int(row["cnt"])
+
+        return {
+            "status_counts": status_counts,
+            "total_jobs": int(totals["total_jobs"]),
+            "avg_attempts_all": round(float(totals["avg_attempts_all"]), 6),
+            "avg_attempts_finished": round(float(totals["avg_attempts_finished"]), 6),
+            "oldest_queued_at_utc": totals["oldest_queued_at_utc"],
+            "newest_created_at_utc": totals["newest_created_at_utc"],
+            "retry_queued_count": int(retry_queued["retry_queued_count"]),
+            "dead_failed_count": int(dead_failed["dead_failed_count"]),
+        }
+
     def _write_result(self, job_id: str, payload: dict[str, Any]) -> str:
         self.results_dir.mkdir(parents=True, exist_ok=True)
         path = self.results_dir / f"{job_id}.json"

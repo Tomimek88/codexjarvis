@@ -30,6 +30,7 @@
   - Execution policy v1: timeout + retry control with execution manifest
   - Run trace v1: per-stage timeline persisted per run
   - Queue runner v1: submit/list/get/work with retry-at-queue-level
+  - Queue stats API/CLI (`queue-stats`) with retry/dead-failed counters
 
 ## Current known external blockers on this PC
 

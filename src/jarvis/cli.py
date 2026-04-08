@@ -120,6 +120,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     queue_get_parser.add_argument("--job-id", type=str, required=True)
 
+    subparsers.add_parser(
+        "queue-stats",
+        help="Show queue aggregate stats and retry/dead-letter counts.",
+    )
+
     queue_work_once_parser = subparsers.add_parser(
         "queue-work-once",
         help="Process at most one queued job.",
@@ -202,6 +207,8 @@ def main(argv: list[str] | None = None) -> int:
             payload = engine.queue_list(limit=args.limit, status=args.status)
         elif args.command == "queue-get":
             payload = engine.queue_get(args.job_id)
+        elif args.command == "queue-stats":
+            payload = engine.queue_stats()
         elif args.command == "queue-work-once":
             payload = engine.queue_work_once(worker_id=args.worker_id)
         elif args.command == "queue-work":
