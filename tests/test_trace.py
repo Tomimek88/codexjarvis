@@ -97,6 +97,38 @@ class TraceTests(unittest.TestCase):
             self.assertEqual(cmp["artifact_diff"]["only_in_run_b"], [])
             self.assertTrue(any(item["path"] == "results/result.json" for item in cmp["artifact_diff"]["changed_sha"]))
 
+    def test_report_run_generates_json_and_markdown(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            engine = JarvisEngine(root)
+            task = {
+                "task_id": "task-report-0001",
+                "objective": "generate report",
+                "domain": "generic",
+                "requires_computation": True,
+                "allow_internet_research": True,
+                "strict_no_guessing": True,
+                "force_rerun": True,
+                "parameters": {"a": 1, "b": 2, "c": 3, "seed": 42},
+            }
+            out = engine.run(task, dry_run=False)
+            run_id = out["run_id"]
+
+            report = engine.report_run(run_id)
+            self.assertEqual(report["status"], "ok")
+            json_rel = report["report_json_path"]
+            md_rel = report["report_md_path"]
+            json_path = root / json_rel
+            md_path = root / md_rel
+            self.assertTrue(json_path.exists())
+            self.assertTrue(md_path.exists())
+
+            report_json = json_path.read_text(encoding="utf-8")
+            report_md = md_path.read_text(encoding="utf-8")
+            self.assertIn(run_id, report_json)
+            self.assertIn(f"# Run Report: {run_id}", report_md)
+            self.assertIn("## Metrics", report_md)
+
 
 if __name__ == "__main__":
     unittest.main()

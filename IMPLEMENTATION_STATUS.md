@@ -33,6 +33,7 @@
   - Run trace v1: per-stage timeline persisted per run
   - Run inspect command: consolidated diagnostics view with trace timings + execution/research/truth overview
   - Run compare command: cross-run diff for status/hashes/metrics/artifacts
+  - Run report command: persistent JSON+Markdown run report generation
   - Run audit commands: `audit-run` and `audit-all` for file/hash/schema integrity validation
   - Run history listing command: `runs-list` with status/domain/text filters
   - Run history aggregate command: `runs-stats` with status/domain success-rate summary

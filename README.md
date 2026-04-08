@@ -147,6 +147,7 @@ jarvis --root <project_root> replay --run-id <run_id>
 jarvis --root <project_root> trace --run-id <run_id>
 jarvis --root <project_root> inspect --run-id <run_id>
 jarvis --root <project_root> compare --run-a <run_id> --run-b <run_id>
+jarvis --root <project_root> report --run-id <run_id>
 jarvis --root <project_root> audit-run --run-id <run_id>
 jarvis --root <project_root> audit-all [--limit 50] [--include-passed]
 jarvis --root <project_root> runs-list [--limit 20] [--status SUCCESS] [--domain generic] [--contains text]
@@ -220,6 +221,7 @@ jarvis --root <project_root> queue-work [--max-jobs 10] [--worker-id worker-1]
   - `jarvis --root <project_root> trace --run-id <run_id>`
   - `jarvis --root <project_root> inspect --run-id <run_id>` (consolidated run diagnostics)
   - `jarvis --root <project_root> compare --run-a <run_id> --run-b <run_id>` (cross-run diff)
+  - `jarvis --root <project_root> report --run-id <run_id>` (writes JSON + Markdown report files)
 
 ## Run Audit (Current)
 

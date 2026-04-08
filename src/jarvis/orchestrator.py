@@ -647,6 +647,48 @@ class JarvisEngine:
             },
         }
 
+    def report_run(self, run_id: str) -> dict[str, Any]:
+        run_dir = self.store.run_path(run_id)
+        if not run_dir.exists():
+            raise ValidationError(f"Run '{run_id}' does not exist.")
+
+        inspect_payload = self.inspect(run_id)
+        evidence = self.store.load_evidence(run_id)
+        metrics = evidence.get("metrics", {})
+        if not isinstance(metrics, dict):
+            metrics = {}
+
+        reports_dir = run_dir / "reports"
+        reports_dir.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        json_path = reports_dir / f"run_report_{stamp}.json"
+        md_path = reports_dir / f"run_report_{stamp}.md"
+
+        report_json = {
+            "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+            "run_id": run_id,
+            "inspect": inspect_payload,
+            "metrics": metrics,
+        }
+        with json_path.open("w", encoding="utf-8", newline="\n") as f:
+            json.dump(report_json, f, indent=2, ensure_ascii=True)
+            f.write("\n")
+
+        md = self._build_markdown_run_report(
+            run_id=run_id,
+            inspect_payload=inspect_payload,
+            metrics=metrics,
+        )
+        with md_path.open("w", encoding="utf-8", newline="\n") as f:
+            f.write(md)
+
+        return {
+            "status": "ok",
+            "run_id": run_id,
+            "report_json_path": str(json_path.relative_to(self.project_root).as_posix()),
+            "report_md_path": str(md_path.relative_to(self.project_root).as_posix()),
+        }
+
     def audit_run(self, run_id: str) -> dict[str, Any]:
         run_dir = self.store.run_path(run_id)
         if not run_dir.exists():
@@ -1355,6 +1397,87 @@ class JarvisEngine:
             f"caveats={caveat_text}",
         ]
         return "; ".join(part for part in parts if part)
+
+    @staticmethod
+    def _build_markdown_run_report(
+        *,
+        run_id: str,
+        inspect_payload: dict[str, Any],
+        metrics: dict[str, Any],
+    ) -> str:
+        meta = inspect_payload.get("meta", {})
+        summary = inspect_payload.get("summary", {})
+        evidence_overview = inspect_payload.get("evidence_overview", {})
+        trace_overview = inspect_payload.get("trace_overview", {})
+        execution_overview = inspect_payload.get("execution_overview", {})
+        research_overview = inspect_payload.get("research_overview", {})
+        truth_overview = inspect_payload.get("truth_overview", {})
+
+        lines: list[str] = []
+        lines.append(f"# Run Report: {run_id}")
+        lines.append("")
+        lines.append("## Meta")
+        lines.append(f"- task_id: {meta.get('task_id', '')}")
+        lines.append(f"- domain: {meta.get('domain', '')}")
+        lines.append(f"- status: {meta.get('status', '')}")
+        lines.append(f"- timestamp_utc: {meta.get('timestamp_utc', '')}")
+        lines.append(f"- objective: {meta.get('objective', '')}")
+        lines.append("")
+
+        lines.append("## Summary")
+        lines.append(f"- headline: {summary.get('headline', '')}")
+        caveats = summary.get("caveats", [])
+        if isinstance(caveats, list) and len(caveats) > 0:
+            lines.append("- caveats:")
+            for item in caveats[:8]:
+                lines.append(f"  - {item}")
+        else:
+            lines.append("- caveats: none")
+        lines.append("")
+
+        lines.append("## Metrics")
+        if len(metrics) == 0:
+            lines.append("- none")
+        else:
+            for key in sorted(metrics.keys()):
+                lines.append(f"- {key}: {metrics[key]}")
+        lines.append("")
+
+        lines.append("## Evidence")
+        lines.append(f"- artifact_count: {evidence_overview.get('artifact_count', 0)}")
+        lines.append(f"- metric_keys: {', '.join(evidence_overview.get('metric_keys', []))}")
+        lines.append("")
+
+        lines.append("## Trace")
+        lines.append(f"- event_count: {trace_overview.get('event_count', 0)}")
+        lines.append(f"- total_span_sec: {trace_overview.get('total_span_sec', 0.0)}")
+        slowest = trace_overview.get("slowest_stages", [])
+        if isinstance(slowest, list) and len(slowest) > 0:
+            lines.append("- slowest_stages:")
+            for item in slowest[:5]:
+                stage = item.get("stage", "")
+                duration = item.get("duration_sec", 0.0)
+                lines.append(f"  - {stage}: {duration}s")
+        lines.append("")
+
+        lines.append("## Execution")
+        lines.append(f"- final_status: {execution_overview.get('final_status', 'UNKNOWN')}")
+        lines.append(f"- attempt_count: {execution_overview.get('attempt_count', 0)}")
+        lines.append(f"- total_attempt_duration_sec: {execution_overview.get('total_attempt_duration_sec', 0.0)}")
+        lines.append("")
+
+        lines.append("## Research")
+        lines.append(f"- source_count: {research_overview.get('source_count', 0)}")
+        lines.append(f"- deduplicated_count: {research_overview.get('deduplicated_count', 0)}")
+        lines.append(f"- error_count: {research_overview.get('error_count', 0)}")
+        lines.append("")
+
+        lines.append("## Truth")
+        lines.append(f"- all_supported: {truth_overview.get('all_supported', False)}")
+        lines.append(f"- unsupported_count: {truth_overview.get('unsupported_count', 0)}")
+        lines.append(f"- blocked_user_claims: {truth_overview.get('blocked_user_claims', False)}")
+        lines.append("")
+        return "\n".join(lines)
 
     @staticmethod
     def _summarize_trace(trace: dict[str, Any]) -> dict[str, Any]:
