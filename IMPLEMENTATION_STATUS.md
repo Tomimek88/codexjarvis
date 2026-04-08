@@ -41,8 +41,10 @@
   - Cache tooling: `cache-verify` and `cache-rebuild`
   - Doctor command: consolidated diagnostic snapshot (`health` + cache + queue + run audit summary)
   - Doctor stale-running detection (`queue_stale_running`) and warning surfacing
+  - Doctor orphan-result detection (`queue_orphan_results`) and warning surfacing
   - Doctor autofix mode: `doctor --fix` for legacy run backfill + cache rebuild + stale-running recovery + failed queue requeue
   - Doctor optional queue cleanup: `doctor --fix --queue-prune ...`
+  - Doctor optional orphan-result cleanup: `doctor --fix --queue-clean-results ...`
   - Batch run command: execute multiple task JSON files with continue/stop-on-error modes
   - Task validation commands: `task-validate` and `task-validate-dir`
   - Run export command: ZIP bundle generation for run portability (`export-run`)

@@ -41,6 +41,7 @@ class DoctorTests(unittest.TestCase):
             self.assertIn("cache_verify", doctor)
             self.assertIn("queue_stats", doctor)
             self.assertIn("queue_stale_running", doctor)
+            self.assertIn("queue_orphan_results", doctor)
             self.assertIn("runs_stats", doctor)
             self.assertIn("audit_summary", doctor)
 
@@ -159,6 +160,31 @@ class DoctorTests(unittest.TestCase):
             self.assertGreaterEqual(int(actions[0].get("result", {}).get("pruned_count", 0)), 1)
             with self.assertRaises(ValueError):
                 engine.queue_get(job_id)
+
+    def test_doctor_detects_and_cleans_orphan_queue_results(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            engine = JarvisEngine(root)
+            orphan_file = root / "data" / "queue" / "results" / "orphan_manual.json"
+            orphan_file.parent.mkdir(parents=True, exist_ok=True)
+            orphan_file.write_text("{\"status\":\"orphan\"}\n", encoding="utf-8")
+
+            before = engine.doctor()
+            self.assertIn("queue_orphan_result_files_present", before["warnings"])
+            self.assertGreaterEqual(int(before["queue_orphan_results"]["orphan_count"]), 1)
+            self.assertTrue(orphan_file.exists())
+
+            fixed = engine.doctor(
+                fix=True,
+                queue_clean_results=True,
+                queue_clean_results_limit=0,
+            )
+            self.assertNotIn("queue_orphan_result_files_present", fixed["warnings"])
+            self.assertEqual(int(fixed["queue_orphan_results"]["orphan_count"]), 0)
+            actions = [item for item in fixed.get("fix_actions", []) if item.get("action") == "queue_clean_results"]
+            self.assertTrue(len(actions) >= 1)
+            self.assertGreaterEqual(int(actions[0].get("result", {}).get("deleted_count", 0)), 1)
+            self.assertFalse(orphan_file.exists())
 
 
 if __name__ == "__main__":

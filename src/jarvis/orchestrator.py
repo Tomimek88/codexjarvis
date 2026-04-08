@@ -1443,6 +1443,8 @@ class JarvisEngine:
         queue_prune_limit: int = 200,
         queue_prune_older_than_sec: int = 86400,
         queue_prune_delete_results: bool = False,
+        queue_clean_results: bool = False,
+        queue_clean_results_limit: int = 0,
     ) -> dict[str, Any]:
         snapshot_before = self._collect_doctor_snapshot()
         warnings_before = self._build_doctor_warnings(snapshot_before)
@@ -1545,6 +1547,18 @@ class JarvisEngine:
                         },
                     }
                 )
+            if queue_clean_results:
+                cleaned = self.queue_clean_results(limit=queue_clean_results_limit, dry_run=False)
+                fix_actions.append(
+                    {
+                        "action": "queue_clean_results",
+                        "result": {
+                            "requested_limit": int(cleaned.get("requested_limit", 0)),
+                            "orphan_count": int(cleaned.get("orphan_count", 0)),
+                            "deleted_count": int(cleaned.get("deleted_count", 0)),
+                        },
+                    }
+                )
 
         snapshot = self._collect_doctor_snapshot()
         warnings = self._build_doctor_warnings(snapshot)
@@ -1559,6 +1573,7 @@ class JarvisEngine:
             "cache_verify": snapshot["cache_verify"],
             "queue_stats": snapshot["queue_stats"],
             "queue_stale_running": snapshot["queue_stale_running"],
+            "queue_orphan_results": snapshot["queue_orphan_results"],
             "runs_stats": snapshot["runs_stats"],
             "audit_summary": snapshot["audit_summary"],
         }
@@ -1576,6 +1591,7 @@ class JarvisEngine:
         queue_payload = self.queue_stats()
         queue_stats = queue_payload.get("stats", {}) if isinstance(queue_payload, dict) else {}
         queue_stale_running = self.queue_stale_running(limit=200, max_age_sec=600)
+        queue_orphan_results = self.queue_orphan_results(limit=500)
         runs = self.runs_stats(limit=200)
         audit = self.audit_all(limit=50, include_passed=False)
         return {
@@ -1583,6 +1599,7 @@ class JarvisEngine:
             "cache_verify": cache,
             "queue_stats": queue_stats,
             "queue_stale_running": queue_stale_running,
+            "queue_orphan_results": queue_orphan_results,
             "runs_stats": runs,
             "audit_summary": {
                 "scanned_count": int(audit.get("scanned_count", 0)),
@@ -1660,6 +1677,7 @@ class JarvisEngine:
         cache = snapshot.get("cache_verify", {})
         queue_stats = snapshot.get("queue_stats", {})
         queue_stale_running = snapshot.get("queue_stale_running", {})
+        queue_orphan_results = snapshot.get("queue_orphan_results", {})
         audit_summary = snapshot.get("audit_summary", {})
         if str(health.get("status", "")).lower() != "ok":
             warnings.append("runtime_health_degraded")
@@ -1667,6 +1685,8 @@ class JarvisEngine:
             warnings.append("cache_invalid_entries_present")
         if int(queue_stale_running.get("stale_count", 0)) > 0:
             warnings.append("queue_stale_running_jobs_present")
+        if int(queue_orphan_results.get("orphan_count", 0)) > 0:
+            warnings.append("queue_orphan_result_files_present")
         if int(queue_stats.get("dead_failed_count", 0)) > 0:
             warnings.append("queue_dead_failed_jobs_present")
         if int(audit_summary.get("failed_count", 0)) > 0:
@@ -2146,6 +2166,16 @@ class JarvisEngine:
             "scanned_count": out.get("scanned_count", 0),
             "orphan_count": out.get("orphan_count", 0),
             "deleted_count": out.get("deleted_count", 0),
+            "files": out.get("files", []),
+        }
+
+    def queue_orphan_results(self, *, limit: int = 0) -> dict[str, Any]:
+        out = self.queue.orphan_results(limit=limit)
+        return {
+            "status": "ok",
+            "requested_limit": out.get("requested_limit", 0),
+            "scanned_count": out.get("scanned_count", 0),
+            "orphan_count": out.get("orphan_count", 0),
             "files": out.get("files", []),
         }
 

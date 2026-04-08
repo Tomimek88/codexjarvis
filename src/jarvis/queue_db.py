@@ -730,6 +730,15 @@ class QueueStore:
             "files": orphan_files[:500],
         }
 
+    def orphan_results(self, *, limit: int = 0) -> dict[str, Any]:
+        preview = self.clean_orphan_results(limit=limit, dry_run=True)
+        return {
+            "requested_limit": preview.get("requested_limit", 0),
+            "scanned_count": preview.get("scanned_count", 0),
+            "orphan_count": preview.get("orphan_count", 0),
+            "files": preview.get("files", []),
+        }
+
     def _write_result(self, job_id: str, payload: dict[str, Any]) -> str:
         self.results_dir.mkdir(parents=True, exist_ok=True)
         path = self.results_dir / f"{job_id}.json"

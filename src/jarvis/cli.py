@@ -49,6 +49,17 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="With --queue-prune, also delete queue result files referenced by pruned jobs.",
     )
+    doctor_parser.add_argument(
+        "--queue-clean-results",
+        action="store_true",
+        help="With --fix, clean orphan queue result files not referenced by jobs.",
+    )
+    doctor_parser.add_argument(
+        "--queue-clean-results-limit",
+        type=int,
+        default=0,
+        help="Max number of queue result files to inspect when cleaning orphans (0 = all).",
+    )
 
     run_parser = subparsers.add_parser("run", help="Run task from task JSON file.")
     run_parser.add_argument("--task-file", type=Path, required=True)
@@ -359,6 +370,8 @@ def main(argv: list[str] | None = None) -> int:
                 queue_prune_limit=args.queue_prune_limit,
                 queue_prune_older_than_sec=args.queue_prune_older_than_sec,
                 queue_prune_delete_results=bool(args.queue_prune_delete_results),
+                queue_clean_results=bool(args.queue_clean_results),
+                queue_clean_results_limit=args.queue_clean_results_limit,
             )
         elif args.command == "run":
             payload = engine.run_from_file(args.task_file.resolve(), dry_run=False)
