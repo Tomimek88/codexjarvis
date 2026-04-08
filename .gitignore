@@ -18,5 +18,7 @@ data/queue/results/*
 !data/queue/results/.gitkeep
 data/runs/*
 !data/runs/.gitkeep
+data/exports/*
+!data/exports/.gitkeep
 artifacts/*
 !artifacts/.gitkeep

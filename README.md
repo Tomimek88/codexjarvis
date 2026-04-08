@@ -150,6 +150,7 @@ jarvis --root <project_root> trace --run-id <run_id>
 jarvis --root <project_root> inspect --run-id <run_id>
 jarvis --root <project_root> compare --run-a <run_id> --run-b <run_id>
 jarvis --root <project_root> report --run-id <run_id>
+jarvis --root <project_root> export-run --run-id <run_id>
 jarvis --root <project_root> audit-run --run-id <run_id>
 jarvis --root <project_root> audit-all [--limit 50] [--include-passed]
 jarvis --root <project_root> runs-list [--limit 20] [--status SUCCESS] [--domain generic] [--contains text]
@@ -259,6 +260,11 @@ jarvis --root <project_root> queue-work [--max-jobs 10] [--worker-id worker-1]
 
 - `batch-run` executes multiple task JSON files from a directory.
 - Supports pattern filtering, recursion control, task limit, dry-run mode, and stop-on-error behavior.
+
+## Run Export (Current)
+
+- `export-run` creates a ZIP snapshot of `data/runs/<run_id>` into `data/exports/`.
+- Useful for portability between machines and offline archive handoff.
 
 ## Queue Runner (Current)
 

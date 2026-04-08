@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import platform
+import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -1317,6 +1318,33 @@ class JarvisEngine:
                 "failed_count": int(audit.get("failed_count", 0)),
                 "error_count": int(audit.get("error_count", 0)),
             },
+        }
+
+    def export_run(self, run_id: str) -> dict[str, Any]:
+        run_dir = self.store.run_path(run_id)
+        if not run_dir.exists():
+            raise ValidationError(f"Run '{run_id}' does not exist.")
+
+        exports_dir = self.project_root / "data" / "exports"
+        exports_dir.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        zip_path = exports_dir / f"{run_id}_{stamp}.zip"
+
+        files_exported = 0
+        with zipfile.ZipFile(zip_path, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+            for path in sorted(run_dir.rglob("*"), key=lambda p: str(p).lower()):
+                if not path.is_file():
+                    continue
+                arcname = str(path.relative_to(self.project_root).as_posix())
+                zf.write(path, arcname=arcname)
+                files_exported += 1
+
+        return {
+            "status": "ok",
+            "run_id": run_id,
+            "zip_path": str(zip_path.relative_to(self.project_root).as_posix()),
+            "files_exported": files_exported,
+            "size_bytes": int(zip_path.stat().st_size),
         }
 
     def memory_query(

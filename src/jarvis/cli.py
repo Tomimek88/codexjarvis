@@ -65,6 +65,12 @@ def build_parser() -> argparse.ArgumentParser:
     compare_parser.add_argument("--run-a", type=str, required=True)
     compare_parser.add_argument("--run-b", type=str, required=True)
 
+    export_parser = subparsers.add_parser(
+        "export-run",
+        help="Export one run directory as a ZIP archive.",
+    )
+    export_parser.add_argument("--run-id", type=str, required=True)
+
     report_parser = subparsers.add_parser(
         "report",
         help="Generate run report files (JSON + Markdown).",
@@ -244,6 +250,8 @@ def main(argv: list[str] | None = None) -> int:
             payload = engine.inspect(args.run_id)
         elif args.command == "compare":
             payload = engine.compare_runs(args.run_a, args.run_b)
+        elif args.command == "export-run":
+            payload = engine.export_run(args.run_id)
         elif args.command == "report":
             payload = engine.report_run(args.run_id)
         elif args.command == "audit-run":
