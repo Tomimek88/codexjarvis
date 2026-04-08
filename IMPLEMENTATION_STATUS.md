@@ -62,6 +62,7 @@
   - Queue worker unlimited drain mode: `queue-work --max-jobs 0`
   - Queue daemon worker mode: `queue-work-daemon` with poll interval + idle-stop controls
   - Quick CLI execution commands: `run-quick` and `queue-submit-quick`
+  - Mission one-command operator flow: `mission` (quick run + report + dashboard)
   - Memory index audit command: `memory-audit`
   - Memory stale-index cleanup command: `memory-clean` (supports `--dry-run`)
   - Doctor memory-index stale-reference warning + autofix cleanup integration

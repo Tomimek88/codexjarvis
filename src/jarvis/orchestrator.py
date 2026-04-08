@@ -469,6 +469,71 @@ class JarvisEngine:
         )
         return self.run(task, dry_run=dry_run)
 
+    def mission(
+        self,
+        *,
+        objective: str,
+        domain: str = "generic",
+        parameters: dict[str, Any] | None = None,
+        task_id: str | None = None,
+        force_rerun: bool = False,
+        acceptance_criteria: list[str] | None = None,
+        dry_run: bool = False,
+        generate_report: bool = True,
+        generate_dashboard: bool = True,
+        dashboard_limit: int = 50,
+    ) -> dict[str, Any]:
+        run_out = self.run_quick(
+            objective=objective,
+            domain=domain,
+            parameters=parameters,
+            task_id=task_id,
+            force_rerun=force_rerun,
+            acceptance_criteria=acceptance_criteria,
+            dry_run=dry_run,
+        )
+        run_status = str(run_out.get("status", ""))
+        run_id = str(run_out.get("run_id", "") or "")
+        cache_key = str(run_out.get("cache_key", "") or "")
+        warnings: list[str] = []
+
+        report_payload: dict[str, Any] | None = None
+        if generate_report and run_id:
+            try:
+                report_payload = self.report_run(run_id)
+            except Exception as exc:
+                report_payload = {
+                    "status": "error",
+                    "error": f"{type(exc).__name__}: {exc}",
+                }
+                warnings.append("report_generation_failed")
+
+        dashboard_payload: dict[str, Any] | None = None
+        if generate_dashboard:
+            try:
+                dashboard_payload = self.runs_dashboard(
+                    limit=dashboard_limit,
+                    domain=domain,
+                    include_failed=True,
+                )
+            except Exception as exc:
+                dashboard_payload = {
+                    "status": "error",
+                    "error": f"{type(exc).__name__}: {exc}",
+                }
+                warnings.append("dashboard_generation_failed")
+
+        return {
+            "status": "ok",
+            "mission_status": run_status,
+            "task_id": str(run_out.get("task_id", "")),
+            "run_id": run_id,
+            "cache_key": cache_key,
+            "report": report_payload,
+            "dashboard": dashboard_payload,
+            "warnings": warnings,
+        }
+
     def task_validate(self, task_file: Path) -> dict[str, Any]:
         path = task_file.resolve()
         task = load_json_file(path)

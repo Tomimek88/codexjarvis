@@ -88,6 +88,22 @@ def build_parser() -> argparse.ArgumentParser:
     run_quick_parser.add_argument("--force-rerun", action="store_true")
     run_quick_parser.add_argument("--dry-run", action="store_true")
 
+    mission_parser = subparsers.add_parser(
+        "mission",
+        help="Run one mission end-to-end (quick run + optional report + optional dashboard).",
+    )
+    mission_parser.add_argument("--objective", type=str, required=True)
+    mission_parser.add_argument("--domain", type=str, default="generic")
+    mission_parser.add_argument("--task-id", type=str, required=False)
+    mission_parser.add_argument("--params-json", type=str, default="{}")
+    mission_parser.add_argument("--param", action="append", dest="param_pairs", default=[])
+    mission_parser.add_argument("--acceptance", action="append", dest="acceptance", default=[])
+    mission_parser.add_argument("--force-rerun", action="store_true")
+    mission_parser.add_argument("--dry-run", action="store_true")
+    mission_parser.add_argument("--no-report", action="store_true")
+    mission_parser.add_argument("--no-dashboard", action="store_true")
+    mission_parser.add_argument("--dashboard-limit", type=int, default=50)
+
     batch_parser = subparsers.add_parser(
         "batch-run",
         help="Run multiple task JSON files from a directory.",
@@ -464,6 +480,21 @@ def main(argv: list[str] | None = None) -> int:
                 force_rerun=bool(args.force_rerun),
                 acceptance_criteria=list(args.acceptance or []),
                 dry_run=bool(args.dry_run),
+            )
+        elif args.command == "mission":
+            params = _parse_json_object_arg(args.params_json, "--params-json")
+            params.update(_parse_param_pairs(list(args.param_pairs or []), "--param"))
+            payload = engine.mission(
+                objective=args.objective,
+                domain=args.domain,
+                parameters=params,
+                task_id=args.task_id,
+                force_rerun=bool(args.force_rerun),
+                acceptance_criteria=list(args.acceptance or []),
+                dry_run=bool(args.dry_run),
+                generate_report=not bool(args.no_report),
+                generate_dashboard=not bool(args.no_dashboard),
+                dashboard_limit=args.dashboard_limit,
             )
         elif args.command == "batch-run":
             payload = engine.batch_run(
