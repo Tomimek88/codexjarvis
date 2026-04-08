@@ -137,6 +137,29 @@ def build_parser() -> argparse.ArgumentParser:
     mission_get_parser.add_argument("--dashboard-limit", type=int, default=50)
     mission_get_parser.add_argument("--dashboard-domain", type=str, required=False)
 
+    mission_list_parser = subparsers.add_parser(
+        "mission-list",
+        help="List queued missions with optional filters.",
+    )
+    mission_list_parser.add_argument("--limit", type=int, default=20)
+    mission_list_parser.add_argument("--status", type=str, required=False)
+    mission_list_parser.add_argument("--domain", type=str, required=False)
+    mission_list_parser.add_argument("--contains", type=str, required=False)
+    mission_list_parser.add_argument("--include-queue-result", action="store_true")
+
+    mission_watch_parser = subparsers.add_parser(
+        "mission-watch",
+        help="Watch one mission job until terminal state or timeout.",
+    )
+    mission_watch_parser.add_argument("--job-id", type=str, required=True)
+    mission_watch_parser.add_argument("--timeout-sec", type=int, default=300)
+    mission_watch_parser.add_argument("--poll-interval-sec", type=float, default=2.0)
+    mission_watch_parser.add_argument("--no-report", action="store_true")
+    mission_watch_parser.add_argument("--no-dashboard", action="store_true")
+    mission_watch_parser.add_argument("--dashboard-limit", type=int, default=50)
+    mission_watch_parser.add_argument("--dashboard-domain", type=str, required=False)
+    mission_watch_parser.add_argument("--include-updates", action="store_true")
+
     batch_parser = subparsers.add_parser(
         "batch-run",
         help="Run multiple task JSON files from a directory.",
@@ -558,6 +581,25 @@ def main(argv: list[str] | None = None) -> int:
                 generate_dashboard=not bool(args.no_dashboard),
                 dashboard_limit=args.dashboard_limit,
                 dashboard_domain=args.dashboard_domain,
+            )
+        elif args.command == "mission-list":
+            payload = engine.mission_list(
+                limit=args.limit,
+                status=args.status,
+                domain=args.domain,
+                contains=args.contains,
+                include_queue_result=bool(args.include_queue_result),
+            )
+        elif args.command == "mission-watch":
+            payload = engine.mission_watch(
+                job_id=args.job_id,
+                timeout_sec=args.timeout_sec,
+                poll_interval_sec=args.poll_interval_sec,
+                generate_report=not bool(args.no_report),
+                generate_dashboard=not bool(args.no_dashboard),
+                dashboard_limit=args.dashboard_limit,
+                dashboard_domain=args.dashboard_domain,
+                include_updates=bool(args.include_updates),
             )
         elif args.command == "batch-run":
             payload = engine.batch_run(

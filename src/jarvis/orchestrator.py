@@ -708,6 +708,170 @@ class JarvisEngine:
             "warnings": warnings,
         }
 
+    def mission_list(
+        self,
+        *,
+        limit: int = 20,
+        status: str | None = None,
+        domain: str | None = None,
+        contains: str | None = None,
+        include_queue_result: bool = False,
+    ) -> dict[str, Any]:
+        safe_limit = max(1, min(int(limit), 200))
+        normalized_status = str(status or "").strip().upper() or None
+        listed = self.queue_list(limit=safe_limit, status=normalized_status)
+        jobs = listed.get("jobs", [])
+        if not isinstance(jobs, list):
+            jobs = []
+
+        domain_filter = str(domain or "").strip().lower()
+        contains_filter = str(contains or "").strip().lower()
+        rows: list[dict[str, Any]] = []
+        for job in jobs:
+            if not isinstance(job, dict):
+                continue
+            task = job.get("task", {})
+            if not isinstance(task, dict):
+                task = {}
+            task_domain = str(task.get("domain", "")).strip().lower()
+            objective = str(task.get("objective", "")).strip()
+            task_id = str(task.get("task_id", "")).strip()
+            job_id = str(job.get("job_id", "")).strip()
+            job_status = str(job.get("status", "QUEUED") or "QUEUED").upper()
+            run_id = str(job.get("run_id", "") or "").strip()
+            if domain_filter and task_domain != domain_filter:
+                continue
+            if contains_filter:
+                haystack = " ".join([job_id, task_id, objective, task_domain, run_id]).lower()
+                if contains_filter not in haystack:
+                    continue
+
+            item = {
+                "job_id": job_id,
+                "task_id": task_id,
+                "objective": objective,
+                "domain": task_domain,
+                "mode": str(job.get("mode", "")),
+                "job_status": job_status,
+                "mission_status": self._mission_status_from_job_status(job_status),
+                "created_at_utc": str(job.get("created_at_utc", "") or ""),
+                "started_at_utc": str(job.get("started_at_utc", "") or ""),
+                "finished_at_utc": str(job.get("finished_at_utc", "") or ""),
+                "attempts": int(job.get("attempts", 0) or 0),
+                "max_attempts": int(job.get("max_attempts", 0) or 0),
+                "worker_id": str(job.get("worker_id", "") or ""),
+                "run_id": run_id,
+                "last_error": str(job.get("last_error", "") or ""),
+                "result_path": str(job.get("result_path", "") or ""),
+            }
+            if include_queue_result:
+                item["queue_result"] = self._load_queue_result_payload(job)
+            rows.append(item)
+
+        return {
+            "status": "ok",
+            "count": len(rows),
+            "requested_limit": safe_limit,
+            "queue_count": int(listed.get("count", 0)),
+            "scope": {
+                "status": str(normalized_status or ""),
+                "domain": domain_filter,
+                "contains": contains_filter,
+                "include_queue_result": bool(include_queue_result),
+            },
+            "missions": rows,
+        }
+
+    def mission_watch(
+        self,
+        *,
+        job_id: str,
+        timeout_sec: int = 300,
+        poll_interval_sec: float = 2.0,
+        generate_report: bool = True,
+        generate_dashboard: bool = True,
+        dashboard_limit: int = 50,
+        dashboard_domain: str | None = None,
+        include_updates: bool = False,
+    ) -> dict[str, Any]:
+        safe_timeout = max(0, min(int(timeout_sec), 86_400))
+        safe_poll = max(0.0, min(float(poll_interval_sec), 30.0))
+        start = time.time()
+        updates: list[dict[str, Any]] = []
+
+        def _collect_snapshot() -> dict[str, Any]:
+            snapshot = self.mission_get(
+                job_id=job_id,
+                generate_report=False,
+                generate_dashboard=False,
+                dashboard_limit=dashboard_limit,
+                dashboard_domain=dashboard_domain,
+            )
+            if include_updates:
+                updates.append(
+                    {
+                        "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+                        "mission_status": str(snapshot.get("mission_status", "")),
+                        "job_status": str(snapshot.get("job_status", "")),
+                        "run_id": str(snapshot.get("run_id", "")),
+                    }
+                )
+            return snapshot
+
+        try:
+            snapshot = _collect_snapshot()
+            while True:
+                mission_status = str(snapshot.get("mission_status", "")).lower()
+                terminal = mission_status in {"completed", "failed", "cancelled"}
+                if terminal:
+                    final_payload = self.mission_get(
+                        job_id=job_id,
+                        generate_report=generate_report,
+                        generate_dashboard=generate_dashboard,
+                        dashboard_limit=dashboard_limit,
+                        dashboard_domain=dashboard_domain,
+                    )
+                    elapsed = round(max(0.0, time.time() - start), 6)
+                    out = {
+                        "status": "ok",
+                        "watch_status": "completed",
+                        "job_id": job_id,
+                        "elapsed_sec": elapsed,
+                        "mission": final_payload,
+                    }
+                    if include_updates:
+                        out["updates"] = updates
+                    return out
+
+                elapsed_now = time.time() - start
+                if safe_timeout > 0 and elapsed_now >= safe_timeout:
+                    elapsed = round(max(0.0, elapsed_now), 6)
+                    out = {
+                        "status": "ok",
+                        "watch_status": "timeout",
+                        "job_id": job_id,
+                        "elapsed_sec": elapsed,
+                        "mission": snapshot,
+                    }
+                    if include_updates:
+                        out["updates"] = updates
+                    return out
+
+                if safe_poll > 0.0:
+                    time.sleep(safe_poll)
+                snapshot = _collect_snapshot()
+        except KeyboardInterrupt:  # pragma: no cover
+            elapsed = round(max(0.0, time.time() - start), 6)
+            out = {
+                "status": "ok",
+                "watch_status": "interrupted",
+                "job_id": job_id,
+                "elapsed_sec": elapsed,
+            }
+            if include_updates:
+                out["updates"] = updates
+            return out
+
     def task_validate(self, task_file: Path) -> dict[str, Any]:
         path = task_file.resolve()
         task = load_json_file(path)

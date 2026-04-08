@@ -65,6 +65,8 @@
   - Mission one-command operator flow: `mission` (quick run + report + dashboard)
   - Mission queue flow: `mission-queue` with optional immediate processing (`--process-now`)
   - Mission status/finalization command: `mission-get` by queue `job_id`
+  - Mission overview command: `mission-list` with queue/domain/text filters
+  - Mission waiter command: `mission-watch` with timeout/polling and optional update snapshots
   - Memory index audit command: `memory-audit`
   - Memory stale-index cleanup command: `memory-clean` (supports `--dry-run`)
   - Doctor memory-index stale-reference warning + autofix cleanup integration

@@ -148,6 +148,8 @@ jarvis --root <project_root> run-quick --objective "<text>" [--domain generic] [
 jarvis --root <project_root> mission --objective "<text>" [--domain generic] [--params-json "{}"] [--param key=value] [--task-id <id>] [--force-rerun] [--acceptance "<criterion>"] [--dry-run] [--no-report] [--no-dashboard] [--dashboard-limit 50]
 jarvis --root <project_root> mission-queue --objective "<text>" [--domain generic] [--params-json "{}"] [--param key=value] [--task-id <id>] [--force-rerun] [--acceptance "<criterion>"] [--dry-run] [--max-attempts 1] [--process-now] [--worker-id worker-1] [--max-cycles 20] [--poll-interval-sec 1.0] [--max-jobs-per-cycle 10] [--idle-stop-after 1] [--no-report] [--no-dashboard] [--dashboard-limit 50]
 jarvis --root <project_root> mission-get --job-id <job_id> [--no-report] [--no-dashboard] [--dashboard-limit 50] [--dashboard-domain generic]
+jarvis --root <project_root> mission-list [--limit 20] [--status SUCCESS] [--domain generic] [--contains text] [--include-queue-result]
+jarvis --root <project_root> mission-watch --job-id <job_id> [--timeout-sec 300] [--poll-interval-sec 2.0] [--no-report] [--no-dashboard] [--dashboard-limit 50] [--dashboard-domain generic] [--include-updates]
 jarvis --root <project_root> batch-run --tasks-dir <dir> [--pattern *.json] [--max-tasks 0] [--dry-run] [--non-recursive] [--stop-on-error]
 jarvis --root <project_root> task-validate --task-file <task.json>
 jarvis --root <project_root> task-validate-dir --tasks-dir <dir> [--pattern *.json] [--max-tasks 0] [--non-recursive] [--stop-on-error]
@@ -199,6 +201,8 @@ Tip: for PowerShell convenience, prefer repeated `--param key=value` over JSON q
 Tip: `mission` is the one-command flow for run + report + dashboard.
 Tip: `mission-queue --process-now` gives you the same flow via queue worker path.
 Tip: `mission-get` is the status/finish command for already submitted queue missions.
+Tip: `mission-list` gives an operator overview of queue-backed missions.
+Tip: `mission-watch` blocks until mission completion (or timeout) and can stream status snapshots with `--include-updates`.
 Tip: use `queue-prune --dry-run` to preview cleanup without deleting jobs/files.
 Tip: run `queue-clean-results --dry-run` to preview orphan result-file cleanup.
 Tip: run `memory-clean --dry-run` to preview stale memory-index cleanup.
@@ -346,6 +350,8 @@ Tip: run `memory-clean --dry-run` to preview stale memory-index cleanup.
 - Ideal as first operator-facing "Jarvis v1" command flow.
 - `mission-queue` supports async submit-first flow and optional immediate processing via `--process-now`.
 - `mission-get` fetches mission state by queue `job_id` and can generate report/dashboard after completion.
+- `mission-list` lists queue-backed missions with filters by queue status/domain/text.
+- `mission-watch` waits for one `job_id` to reach terminal state and can include per-poll status updates.
 
 ## Evidence-First Guarantee in This Scaffold
 
